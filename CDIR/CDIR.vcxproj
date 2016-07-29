@@ -79,7 +79,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>$(IncludePath);</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -127,7 +127,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);libressl-2.4.1-windows\include;</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <ForcedIncludeFiles>stdafx.h</ForcedIncludeFiles>
@@ -140,10 +140,11 @@
       <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
       <UACUIAccess>false</UACUIAccess>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>
+      </DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
-      <Command>
-      </Command>
+      <Command>copy $(ProjectDir)libressl-2.4.1-windows\x86\libcrypto-38.dll $(OutDir) &amp; copy $(ProjectDir)libressl-2.4.1-windows\x86\libssl-39.dll $(OutDir) &amp; copy $(ProjectDir)winpmem.exe $(OutDir) &amp; copy $(ProjectDir)cdir.ini $(OutDir)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -168,29 +169,46 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CDIR.h" />
+    <ClInclude Include="ConfigParser.h" />
+    <ClInclude Include="globals.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="util.h" />
+    <ClInclude Include="WriteWrapper.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CDIR.cpp">
       <ForcedIncludeFiles Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
       </ForcedIncludeFiles>
     </ClCompile>
-    <ClCompile Include="hash-library\md5.cpp" />
-    <ClCompile Include="hash-library\sha1.cpp" />
-    <ClCompile Include="hash-library\sha256.cpp" />
+    <ClCompile Include="ConfigParser.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="util.cpp" />
+    <ClCompile Include="WriteWrapper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CDIR.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="collector.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="libressl-2.4.1-windows\x86\libcrypto-38.dll">
+      <FileType>Document</FileType>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
+      <DeploymentContent>false</DeploymentContent>
+    </None>
+    <None Include="libressl-2.4.1-windows\x86\libssl-39.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="libressl-2.4.1-windows\x86\libcrypto-38.lib" />
+    <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

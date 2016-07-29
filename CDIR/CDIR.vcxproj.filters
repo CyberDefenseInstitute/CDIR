@@ -24,6 +24,21 @@
     <ClInclude Include="targetver.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="CDIR.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigParser.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="util.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="WriteWrapper.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="globals.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -32,13 +47,13 @@
     <ClCompile Include="CDIR.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="hash-library\md5.cpp">
+    <ClCompile Include="ConfigParser.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="hash-library\sha1.cpp">
+    <ClCompile Include="WriteWrapper.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="hash-library\sha256.cpp">
+    <ClCompile Include="util.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
@@ -51,5 +66,21 @@
     <Image Include="collector.ico">
       <Filter>リソース ファイル</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="libressl-2.4.1-windows\x86\libssl-39.dll">
+      <Filter>リソース ファイル</Filter>
+    </None>
+    <None Include="libressl-2.4.1-windows\x86\libcrypto-38.dll">
+      <Filter>リソース ファイル</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="libressl-2.4.1-windows\x86\libcrypto-38.lib">
+      <Filter>リソース ファイル</Filter>
+    </Library>
+    <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib">
+      <Filter>リソース ファイル</Filter>
+    </Library>
   </ItemGroup>
 </Project>

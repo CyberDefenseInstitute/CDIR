@@ -13,6 +13,7 @@
  */
 
 #include "stdafx.h"
+
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -21,36 +22,27 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <map>
 #include <utility>
-#include <thread>
-#include <mutex>
+#include <algorithm>
+
+#include "CDIR.h"
+#include "util.h"
+#include "WriteWrapper.h"
+#include "globals.h"
+
+#include "openssl\sha.h"
+#include "openssl\md5.h"
 
 #include <windows.h>
-#include <shlobj.h>
 #include <shlwapi.h>
 
-#include "..\NTFSParserDLL\NTFS.h"
-#include "..\NTFSParserDLL\NTFS_DataType.h"
-
-#include "hash-library\sha256.h"
-#include "hash-library\sha1.h"
-#include "hash-library\md5.h"
-
 #pragma comment(lib, "shlwapi.lib")
-#pragma warning(disable:4996)
-#pragma warning(disable:4700)
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "libcrypto-38.lib")
+
 #define CHUNKSIZE 262144
 
 using namespace std;
-
-struct FileInfo_t
-{
-	CNTFSVolume* volume;
-	CFileRecord* fileRecord;
-	CIndexEntry* indexEntry;
-	CAttrBase* data;
-};
 
 typedef FileInfo_t* (__cdecl *StealthOpenFile_func)(char*);
 typedef int(__cdecl *StealthReadFile_func)(FileInfo_t*, BYTE*, DWORD, ULONGLONG, DWORD*, ULONGLONG*, ULONGLONG);
@@ -60,41 +52,23 @@ StealthOpenFile_func  StealthOpenFile;
 StealthReadFile_func  StealthReadFile;
 StealthCloseFile_func StealthCloseFile;
 
-HMODULE hNTFSParserdll;
+string WriteWrapper::address;
+int WriteWrapper::port;
+string WriteWrapper::proxy_address;
+int WriteWrapper::proxy_port;
+string WriteWrapper::path;
+string WriteWrapper::uriroot;
+bool WriteWrapper::useProxy;
+string WriteWrapper::curdir = "";
+int WriteWrapper::status = 0;
+
+bool memdump = true, mftdump = true, usndump = true, evtxdump = true, prefdump = true, regdump = true;
+
 char osvolume[3], sysdir[MAX_PATH + 1], windir[MAX_PATH + 1];
 
+HMODULE hNTFSParserdll;
 
-void __exit(int code) {
-	cerr << "Press Enter key to continue..." << endl;
-	char c;
-	cin.ignore();
-	cin.get(c);
-	exit(code);
-}
-
-void _perror(char *msg) {
-	char buf[1024];
-	DWORD ec = GetLastError(); // Error Code
-	FormatMessage(
-		FORMAT_MESSAGE_FROM_SYSTEM |
-		FORMAT_MESSAGE_IGNORE_INSERTS,
-		NULL,
-		ec, 
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		buf,
-		1024,
-		NULL);
-	cerr << msg << ": " << buf << endl;
-}
-
-char *expandenv(char *str) {
-	int size = strlen(str) + 1024;
-	char *out = (char*)malloc(size);
-	if (ExpandEnvironmentStrings(str, out, size) != 0)
-		return out;
-	else
-		return NULL;
-}
+ConfigParser *config;
 
 int launchprocess(char *cmdline) {
 	PROCESS_INFORMATION pi = {};
@@ -145,13 +119,6 @@ int launchprocess(char *cmdline) {
 	}
 
 	return ret;
-}
-
-string msg(string jp, string en, WORD lang=GetUserDefaultLangID()) {
-	if ((lang&0xff) == LANG_JAPANESE)
-		return jp;
-	else
-		return en;
 }
 
 int CopyFileTime(char* src, char* dst) {
@@ -205,14 +172,6 @@ uint64_t get_filesize(char *fname) {
 	return fsize;
 }
 
-string basename(string &path, char delim='\\') {
-	return path.substr(path.find_last_of(delim) + 1);
-}
-
-string dirname(string &path, char delim = '\\') {
-	return path.substr(0, path.find_last_of(delim));
-}
-
 int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, BOOL SparseSkip=false) {
 	//cerr << filepath << endl;
 
@@ -233,11 +192,16 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	};
 
 	ULONGLONG filesize = (ULONGLONG)file->data->GetDataSize();
-	ofstream osfile(outpath, ios::out | ios::binary | ios::app);
-	SHA256 sha256;
-	SHA1 sha1;
-	MD5 md5;
+	WriteWrapper wfile(outpath, filesize);
 
+	SHA256_CTX sha256;
+	SHA_CTX sha1;
+	MD5_CTX md5;
+
+	SHA256_Init(&sha256);
+	SHA1_Init(&sha1);
+	MD5_Init(&md5);
+	
 	uint64_t skipclusters = 0;
 	if (SparseSkip) {
 		CDataRunList *drlist = ((CAttrNonResident*)(file->data))->GetDataRunList();
@@ -253,6 +217,10 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 			dr = drlist->FindNextEntry();
 		}
 		offset = skipclusters * file->volume->GetClusterSize();
+	}
+
+	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, "C:\\$Extend\\$UsnJrnl:$J") == 0)) { // if using WebDAV and reading file except UsnJrnl
+		wfile.sendheader();
 	}
 
 	int atrnum = 0;
@@ -300,29 +268,45 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 			offset += bytesread;
 			continue;
 		}
-		if (osslog) {
-			sha256.add(buf, bytesread);
-			sha1.add(buf, bytesread);
-			md5.add(buf, bytesread);
+
+		if (!wfile.isLocal() && !wfile.isHeaderSent) { // in case of UsnJrnl, sending WebDAV header here
+			wfile.sendheader(filesize - offset);
 		}
-		osfile.write((char*)buf, bytesread);
+
+		if (osslog) {
+			SHA256_Update(&sha256, buf, bytesread);
+			SHA1_Update(&sha1, buf, bytesread);
+			MD5_Update(&md5, buf, bytesread);
+		}
+		// osfile.write((char*)buf, bytesread);
+		wfile.write((char*)buf, bytesread);
 		offset += bytesread;
 	} while (bytesleft > 0 && offset < filesize);
 
-	osfile.close();
+	wfile.close();
 
 	free(buf);
 
 	StealthCloseFile(file);
 
-	CopyFileTime(filepath, outpath);
+	if (WriteWrapper::isLocal()) {
+		CopyFileTime(filepath, outpath);
+	}
 
 	if (osslog) {
-		*osslog << md5.getHash();
+		unsigned char sha256hash[SHA256_DIGEST_LENGTH];
+		unsigned char sha1hash[SHA_DIGEST_LENGTH];
+		unsigned char md5hash[MD5_DIGEST_LENGTH];
+
+		SHA256_Final(sha256hash, &sha256);
+		SHA1_Final(sha1hash, &sha1);
+		MD5_Final(md5hash, &md5);
+		
+		*osslog << hexdump(md5hash, MD5_DIGEST_LENGTH);
 		*osslog << "\t";
-		*osslog << sha1.getHash();
+		*osslog << hexdump(sha1hash, SHA_DIGEST_LENGTH);
 		*osslog << "\t";
-		*osslog << sha256.getHash();
+		*osslog << hexdump(sha256hash, SHA256_DIGEST_LENGTH);
 		*osslog << "\t";
 		*osslog << filepath;
 		*osslog << "\r\n";
@@ -379,24 +363,21 @@ int get_pagefilepath(char *ret) {
 }
 
 int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
-	// ramcapture and winpmem	
+	// winpmem	
 	char tmp[256];
 
-	sprintf(tmp, "..\\winpmem_1.6.2.exe RAM_%s.raw", computername);
+	sprintf(tmp, "..\\winpmem.exe --output RAM_%s.aff4", computername);
 
 	launchprocess(tmp);
 
-	sprintf(tmp, "RAM_%s.raw", computername);
-
-	if (filecheck(tmp)) {
-		sprintf(tmp, "..\\winpmem.exe -p %s -o RAM_%s.aff4", pagefilepath + 4, computername);
-		launchprocess(tmp);
-	}
+	// for pagefile.sys acquisition
+	//	sprintf(tmp, "..\\winpmem.exe -p %s -o RAM_%s.aff4", pagefilepath + 4, computername);
+	//	launchprocess(tmp);
 
 	return 0;
 }
 
-int get_analysisdata(ostringstream *osslog=NULL) {
+int get_analysisdata(ostringstream *osslog = NULL) {
 	// collect somefiles
 
 	// order of collection
@@ -418,8 +399,6 @@ int get_analysisdata(ostringstream *osslog=NULL) {
 	//     * UsrClass.dat
 	// pagefile.sys
 
-	
-
 	PVOID oldval = NULL;
 	Wow64DisableWow64FsRedirection(&oldval);
 
@@ -430,131 +409,144 @@ int get_analysisdata(ostringstream *osslog=NULL) {
 	char srcpath[MAX_PATH + 1];
 	char dstpath[MAX_PATH + 1];
 
-
-	// get MFT
-	sprintf(srcpath, "%s\\$MFT", osvolume);
-	sprintf(dstpath, "$MFT");
-	StealthGetFile(srcpath, dstpath, osslog, false);
-	cerr << msg("メタデータ 取得完了", "metadata is saved") << endl;
-
-
-	// get UsnJrnl
-	sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
-	sprintf(dstpath, "$UsnJrnl-$J");
-	StealthGetFile(srcpath, dstpath, osslog, true);
-
-	if (!get_filesize("$UsnJrnl-$J")) {
+	if (mftdump == true) {
+		// get MFT
+		sprintf(srcpath, "%s\\$MFT", osvolume);
+		sprintf(dstpath, "$MFT");
 		StealthGetFile(srcpath, dstpath, osslog, false);
-	}
-	cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
-
-	// get event logs		
-	CreateDirectory("Evtx", NULL);
-	
-	sprintf(findpath, "%s\\winevt\\Logs\\*.evtx", sysdir);
-	hfind = FindFirstFile(findpath, &w32fd);
-
-	if (hfind == INVALID_HANDLE_VALUE) {
-		_perror("getting evtx files");
-	}
-	else {
-		do {
-			char srcpath[MAX_PATH+1];
-			char dstpath[MAX_PATH+1];
-			//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
-			//if (size == 69632)
-			//	continue;
-			sprintf(srcpath, "%s\\winevt\\Logs\\%s", sysdir, w32fd.cFileName);
-			sprintf(dstpath, "Evtx\\%s", w32fd.cFileName);
-			StealthGetFile(srcpath, dstpath, osslog, false);
-		} while (FindNextFile(hfind, &w32fd));
-		FindClose(hfind);
-	}
-	cerr << msg("イベントログ 取得完了", "event log is saved") << endl;
-
-
-	// get prefetch files
-	CreateDirectory("Prefetch", NULL);
-
-	sprintf(findpath, "%s\\Prefetch\\*.pf", windir);
-	hfind = FindFirstFile(findpath, &w32fd);
-
-	if (hfind == INVALID_HANDLE_VALUE) {
-		_perror("Prefetch files");
-	}
-	else {
-		do {
-			//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
-			sprintf(srcpath, "%s\\Prefetch\\%s", windir, w32fd.cFileName);
-			sprintf(dstpath, "Prefetch\\%s", w32fd.cFileName);
-			StealthGetFile(srcpath, dstpath, osslog, false);
-		} while (FindNextFile(hfind, &w32fd));
-		FindClose(hfind);
-	}
-	cerr << msg("プリフェッチ 取得完了", "prefetch is saved") << endl;
-
-
-	// get registry
-	vector<string> paths = {
-		"\\config\\SAM",
-		"\\config\\SECURITY",
-		"\\config\\SOFTWARE",
-		"\\config\\SYSTEM"
-	};
-	vector<pair<string, string> > paths_pair;
-	for (int i = 0; i < paths.size(); i++) {
-		paths_pair.push_back(pair<string, string>(string(sysdir)+paths[i], "Registry\\"+basename(paths[i])));
+		cerr << msg("メタデータ 取得完了", "metadata is saved") << endl;
 	}
 
-	//// each user
-	vector<string> users;
+	if (usndump == true) {
+		// get UsnJrnl	
+		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
+		sprintf(dstpath, "$UsnJrnl-$J");
 
-	sprintf(findpath, "%s\\Users\\*", osvolume);
-	hfind = FindFirstFile(findpath, &w32fd);
+		StealthGetFile(srcpath, dstpath, osslog, true);
 
-	if (hfind == INVALID_HANDLE_VALUE) {
-		_perror("getting user");
-	}
-	else {
-		do {
-			if (string(w32fd.cFileName) == "." 
-				|| string(w32fd.cFileName) == ".."
-				|| string(w32fd.cFileName) == "Public"
-				|| string(w32fd.cFileName) == "Default User"
-				|| string(w32fd.cFileName) == "All Users"
-				|| (w32fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != FILE_ATTRIBUTE_DIRECTORY)
-				continue;
-			users.push_back(w32fd.cFileName);
-		} while (FindNextFile(hfind, &w32fd));
-		FindClose(hfind);
-	}
-
-	for (int i = 0; i < users.size(); i++) {
-		paths_pair.push_back(pair<string, string>(string(osvolume)+"\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\"+users[i]+"_NTUSER.dat"));
-		paths_pair.push_back(pair<string, string>(string(osvolume)+"\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\"+users[i]+"_UsrClass.dat"));
-	}
-
-	CreateDirectory("Registry", NULL);
-
-	for (int i = 0; i < paths_pair.size(); i++) {
-		char *srcpath, *dstpath;
-		srcpath = strdup(paths_pair[i].first.c_str());
-		dstpath = strdup(paths_pair[i].second.c_str());
-
-		if (filecheck(srcpath)) {
-			continue;
+		if (WriteWrapper::isLocal()) {
+			if (!get_filesize("$UsnJrnl-$J")) {
+				StealthGetFile(srcpath, dstpath, osslog, false);
+			}
 		}
-		StealthGetFile(srcpath, dstpath, osslog, false);
+		cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
 	}
-	cerr << msg("レジストリ 取得完了", "registry is saved") << endl;
 
+	if (evtxdump == true) {
+		// get event logs		
+		mkdir("Evtx");
+
+		sprintf(findpath, "%s\\winevt\\Logs\\*.evtx", sysdir);
+		hfind = FindFirstFile(findpath, &w32fd);
+
+		if (hfind == INVALID_HANDLE_VALUE) {
+			_perror("getting evtx files");
+		}
+		else {
+			do {
+				char srcpath[MAX_PATH + 1];
+				char dstpath[MAX_PATH + 1];
+				//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
+				//if (size == 69632)
+				//	continue;
+				sprintf(srcpath, "%s\\winevt\\Logs\\%s", sysdir, w32fd.cFileName);
+				sprintf(dstpath, "Evtx\\%s", w32fd.cFileName);
+				StealthGetFile(srcpath, dstpath, osslog, false);
+			} while (FindNextFile(hfind, &w32fd));
+			FindClose(hfind);
+		}
+		cerr << msg("イベントログ 取得完了", "event log is saved") << endl;
+	}
+	
+	if (prefdump == true) {
+		// get prefetch files
+		mkdir("Prefetch");
+
+		sprintf(findpath, "%s\\Prefetch\\*.pf", windir);
+		hfind = FindFirstFile(findpath, &w32fd);
+
+		if (hfind == INVALID_HANDLE_VALUE) {
+			_perror("Prefetch files");
+		}
+		else {
+			do {
+				//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
+				sprintf(srcpath, "%s\\Prefetch\\%s", windir, w32fd.cFileName);
+				sprintf(dstpath, "Prefetch\\%s", w32fd.cFileName);
+				StealthGetFile(srcpath, dstpath, osslog, false);
+			} while (FindNextFile(hfind, &w32fd));
+			FindClose(hfind);
+		}
+		cerr << msg("プリフェッチ 取得完了", "prefetch is saved") << endl;
+	}
+
+
+	if (regdump == true) {
+		// get registry
+		vector<string> paths = {
+			"\\config\\SAM",
+			"\\config\\SECURITY",
+			"\\config\\SOFTWARE",
+			"\\config\\SYSTEM"
+		};
+		vector<pair<string, string> > paths_pair;
+		for (int i = 0; i < paths.size(); i++) {
+			paths_pair.push_back(pair<string, string>(string(sysdir) + paths[i], "Registry\\" + basename(paths[i])));
+		}
+
+		// Amcache.hve
+		paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Windows\\AppCompat\\Programs\\Amcache.hve", "Registry\\Amcache.hve"));
+
+		//// each user
+		vector<string> users;
+
+		sprintf(findpath, "%s\\Users\\*", osvolume);
+		hfind = FindFirstFile(findpath, &w32fd);
+
+		if (hfind == INVALID_HANDLE_VALUE) {
+			_perror("getting user");
+		}
+		else {
+			do {
+				if (string(w32fd.cFileName) == "."
+					|| string(w32fd.cFileName) == ".."
+					|| string(w32fd.cFileName) == "Public"
+					|| string(w32fd.cFileName) == "Default User"
+					|| string(w32fd.cFileName) == "All Users"
+					|| (w32fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != FILE_ATTRIBUTE_DIRECTORY)
+					continue;
+				users.push_back(w32fd.cFileName);
+			} while (FindNextFile(hfind, &w32fd));
+			FindClose(hfind);
+		}
+
+		for (int i = 0; i < users.size(); i++) {
+			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
+			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
+		}
+
+		mkdir("Registry");
+
+		for (int i = 0; i < paths_pair.size(); i++) {
+			char *srcpath, *dstpath;
+			srcpath = strdup(paths_pair[i].first.c_str());
+			dstpath = strdup(paths_pair[i].second.c_str());
+
+			if (filecheck(srcpath)) {
+				continue;
+			}
+			StealthGetFile(srcpath, dstpath, osslog, false);
+		}
+		cerr << msg("レジストリ 取得完了", "registry is saved") << endl;
+	}
+	
 
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
-	bool memdump = false, is_x64;
+	bool is_x64;
 	int input = 0;
 	string procname;
 	char dllpath[MAX_PATH + 1], foldername[MAX_PATH + 1], computername[MAX_COMPUTERNAME_LENGTH + 1], pagefilepath[MAX_PATH + 1], timestamp[15];
@@ -565,7 +557,6 @@ int main(int argc, char **argv)
 	uint64_t time_diff;
 	struct tm *t;
 	SYSTEM_INFO sysinfo;
-
 
 	sprintf(dllpath, "%s\\NTFSParserDLL.dll", dirname(string(argv[0])).c_str());
 	if ((hNTFSParserdll = LoadLibrary(dllpath)) == NULL) {
@@ -580,37 +571,45 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.0 - 初動対応用データ収集ツール", "CDIR Collector v1.0 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.1 - 初動対応用データ収集ツール", "CDIR Collector v1.1 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
-	if (!stricmp(procname.c_str(), "cdir-collector.exe")) {
-		memdump = false;
-		cout << msg("メモリダンプ 取得する:1 取得しない:2 プログラム終了:0 (デフォルト 0)", 
-			        "Collect memory dump? [0] (1:ON 2:OFF 0:EXIT)") << endl << "> ";
-		cin >> input; memdump = (input == 1) ? true : false;
-
-		if (!input)	__exit(EXIT_SUCCESS);
-	}
-	else {
-		if (procname.find("_mem") != string::npos) {
-			cerr << msg("メモリダンプ: ON", 
-				        "Memory dump: ON") << endl;
-			memdump = true;
-		}
-		else if (procname.find("_nomem") != string::npos) {
-			cerr << msg("メモリダンプ: OFF", 
-				        "Memory dump: OFF") << endl;
-		}
-		else {
-			cerr << msg("[エラー] 無効なファイル名",
-				        "[ERROR] Invalid file name") << endl;
-			__exit(EXIT_FAILURE);
+	// getting config
+	string confnames[2] = {"cdir.ini", "cdir.conf"};
+	for (string confname : confnames) {
+		config = new ConfigParser(confname);
+		if (config->isOpened()) {
+			cerr << msg(confname+"を読み込み中...",
+				"Loading "+confname+"...") << endl;
+			break;
 		}
 	}
 
+	if (config->isOpened()) {
+		// param, JP, EN
+		vector<pair<vector<string>, bool*>> params = {
+			{{"MemoryDump", "メモリダンプ", "Memory dump"}, &memdump},
+			{{"MFT", "MFT", "MFT"}, &mftdump},
+			{{"UsnJrnl", "ジャーナル", "UsnJrnl"}, &usndump},
+			{{"EventLog", "イベントログ", "Event log"}, &evtxdump},
+			{{"Prefetch", "プリフェッチ", "Prefetch"}, &prefdump},
+			{{"Registry", "レジストリ", "Registry"}, &regdump}
+		};
 
-	if (memdump && filecheck("winpmem_1.6.2.exe")){
-		// __exit(EXIT_FAILURE);
+		for (size_t i = 0; i < params.size(); i++) {
+			string param, jp, en;
+			param = params[i].first[0], jp = params[i].first[1], en = params[i].first[2];
+			bool *ptr = params[i].second;
+			bool flag = config->getBool(param);
+			*ptr = flag;
+		}
+
+		for (size_t i = 0; i < params.size(); i++) {
+			string param, jp, en;
+			param = params[i].first[0], jp = params[i].first[1], en = params[i].first[2];
+			bool flag = *(params[i].second);
+			cerr << msg(jp + ": " + (flag ? "ON" : "OFF"), en + ": " + (flag ? "ON" : "OFF")) << endl;
+		}
 	}
 
 
@@ -656,24 +655,26 @@ int main(int argc, char **argv)
 	}
 
 	sprintf(foldername, "%s_%s", computername, timestamp);
-	CreateDirectory(foldername, NULL);
-	if (!SetCurrentDirectory(foldername)) {
-		_perror("SetCurrentDirectory:");
-	}
+	mkdir(foldername);
+	chdir(foldername);
 
 
 	// start logging
-	ofstream ofsinfo("collector-log.txt", ios::out | ios::app);
-	ostringstream osslog;
-
+	ostringstream ossinfo, osslog;
 
 	// start collecting
 	get_pagefilepath(pagefilepath);
 
 	if (memdump) {
-		get_memdump(is_x64, computername, pagefilepath);
-		cout << msg("メモリダンプ取得完了",
-			        "Finished collecting memory dump") << endl;
+		if (filecheck("..\\winpmem.exe")) {
+			cout << msg("メモリダンプ用プログラムがありません",
+				"No memory dump program found") << endl;
+		}
+		else {
+			get_memdump(is_x64, computername, pagefilepath);
+			cout << msg("メモリダンプ取得完了",
+				"Finished collecting memory dump") << endl;
+		}
 	}
 	
 	cout << msg("ディスク内データ 取得開始",
@@ -696,36 +697,40 @@ int main(int argc, char **argv)
 
 
 	// output log
-	ofsinfo << msg("開始時刻: ", "Start   time: ") << t_beg << "\r\n";
-	ofsinfo << msg("終了時刻: ", "End     time: ") << t_end << "\r\n";
-	ofsinfo << msg("所要時間: ", "Elapsed time: ");
+	ossinfo << msg("開始時刻: ", "Start   time: ") << t_beg << "\r\n";
+	ossinfo << msg("終了時刻: ", "End     time: ") << t_end << "\r\n";
+	ossinfo << msg("所要時間: ", "Elapsed time: ");
 	time_diff = (uint64_t)difftime(_t_end, _t_beg);
 	if (time_diff / (60 * 60)) {
-		ofsinfo << setfill('0') << setw(2) << (time_diff / (60 * 60)) << ":";
+		ossinfo << setfill('0') << setw(2) << (time_diff / (60 * 60)) << ":";
 		time_diff %= (60 * 60);
 	}
 	else {
-		ofsinfo << "00:";
+		ossinfo << "00:";
 	}
 	if (time_diff / 60) {
-		ofsinfo << setfill('0') << setw(2) << (time_diff / 60) << ":";
+		ossinfo << setfill('0') << setw(2) << (time_diff / 60) << ":";
 		time_diff %= 60;
 	}
 	else {
-		ofsinfo << "00:";
+		ossinfo << "00:";
 	}
-	ofsinfo << setfill('0') << setw(2) << time_diff << "\r\n";
+	ossinfo << setfill('0') << setw(2) << time_diff << "\r\n";
 
-	ofsinfo << "\r\n";
-	ofsinfo << "MD5" << "\t\t\t\t\t";
-	ofsinfo << "SHA1" << "\t\t\t\t\t\t";
-	ofsinfo << "SHA256" << "\t\t\t\t\t";
-	ofsinfo << "\r\n";
-	ofsinfo << "================================" << "\t";
-	ofsinfo << "========================================" << "\t";
-	ofsinfo << "================================================================" << "\t";
-	ofsinfo << "\r\n";
-	ofsinfo << osslog.str();
-	ofsinfo.close();
+	ossinfo << "\r\n";
+	ossinfo << "MD5" << "\t\t\t\t\t";
+	ossinfo << "SHA1" << "\t\t\t\t\t\t";
+	ossinfo << "SHA256" << "\t\t\t\t\t";
+	ossinfo << "\r\n";
+	ossinfo << "================================" << "\t";
+	ossinfo << "========================================" << "\t";
+	ossinfo << "================================================================" << "\t";
+	ossinfo << "\r\n";
+	ossinfo << osslog.str();
+
+	string log_str = ossinfo.str();
+	WriteWrapper log("collector-log.txt", log_str.size());
+	log.sendfile(log_str.c_str());
+	log.close();
 	__exit(EXIT_SUCCESS);
 }
