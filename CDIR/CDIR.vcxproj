@@ -73,9 +73,12 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(ProjectDIr)\libressl-2.4.1-windows\include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
+    <LibraryPath>$(LibraryPath)</LibraryPath>
+    <IncludePath>$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -172,6 +175,7 @@
     <ClInclude Include="CDIR.h" />
     <ClInclude Include="ConfigParser.h" />
     <ClInclude Include="globals.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="util.h" />
@@ -196,9 +200,6 @@
     <ResourceCompile Include="CDIR.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="collector.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="libressl-2.4.1-windows\x86\libcrypto-38.dll">
       <FileType>Document</FileType>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
@@ -209,6 +210,9 @@
   <ItemGroup>
     <Library Include="libressl-2.4.1-windows\x86\libcrypto-38.lib" />
     <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="collector.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

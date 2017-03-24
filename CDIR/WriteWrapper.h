@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <iostream>
 #include <fstream>
@@ -45,14 +45,14 @@ public:
 	WriteWrapper(char *, ULONGLONG, bool isDirectory=false);
 	static bool isLocal();
 	bool getConnInfo();
-	void getProxyInfo();
+	int getProxyInfo();
 	string urlencode(string);
 	void mkdir(string);
 	static void chdir(string);
 	void sendfile(const char *);
-	void sendheader(ULONGLONG = 0);
-	int write(const char *, long long);
-	int read(char *, long long);
+	int sendheader(ULONGLONG = 0);
+	long long write(const char *, long long);
+	long long read(char *, long long);
 	string readall();
 	string readuntil(string);
 	void close();

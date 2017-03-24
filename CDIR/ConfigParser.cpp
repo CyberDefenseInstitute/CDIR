@@ -1,4 +1,4 @@
-#include "stdafx.h"
+ï»¿#include "stdafx.h"
 #include "ConfigParser.h"
 #include "util.h"
 
@@ -20,15 +20,56 @@ ConfigParser::ConfigParser(string path)
 
 			if ((idx = l.find_first_of('=')) != string::npos) {
 				string key = l.substr(0, idx);
-				string value = l.substr(idx+1);
+				string val = l.substr(idx+1);
 
 				// trim string
 				key = trim(key);
-				value = trim(value);
-				transform(key.begin(), key.end(), key.begin(), ::tolower);
-				m[key] = value;
+				val = trim(val);
+				if (CONFIGLIST.find(key) != CONFIGLIST.end()) {
+					Value value;
+					value.type = CONFIGLIST[key];
+					switch (CONFIGLIST[key]) {
+					case TYPE_BOOL:
+						value.ptr = new bool;
+						*((bool*)value.ptr) = [=]() {
+							if (_stricmp("true", val.c_str()) == 0) {
+								return true;
+							}
+							if (_stricmp("false", val.c_str()) == 0) {
+								return false;
+							}
+							if (strcmp("1", val.c_str()) == 0) {
+								return true;
+							}
+							if (strcmp("0", val.c_str()) == 0) {
+								return false;
+							}
+							cerr << msg("ãƒ‘ãƒ¼ã‚¹ã‚¨ãƒ©ãƒ¼",
+								"parse error.") << endl;
+							cerr << key + " " + "(1:ON 2:OFF 0:EXIT)" << endl << "> ";
+							int input;  cin >> input;
+							if (!input)	__exit(EXIT_SUCCESS);
+
+							return (input == 1) ? true : false;
+						}();						
+
+						break;
+					case TYPE_INT:
+						value.ptr = new int;
+						*((int*)value.ptr) = atoi(val.c_str());
+						break;
+					case TYPE_STRING:
+						value.ptr = new string;
+						*((string*)value.ptr) = val;
+						break;
+					}
+					m[key] = value;
+				}
 			}
 		}
+		//for (auto &it : CONFIGLIST) {
+		//	cout << it.first << endl;
+		//}
 	}
 	else {
 		opened = false;
@@ -44,48 +85,27 @@ bool ConfigParser::isOpened() {
 	return opened;
 }
 
+
 bool ConfigParser::isSet(string key) {
-	transform(key.begin(), key.end(), key.begin(), ::tolower);
 	return m.find(key) != m.end();
 }
 
-bool ConfigParser::getBool(string key) {
-	string keyname = key;
-	transform(key.begin(), key.end(), key.begin(), ::tolower);
-	if (isSet(key)) {
-		if (_stricmp("true", m[key].c_str()) == 0) {
-			return true;
-		}
-		if (_stricmp("false", m[key].c_str()) == 0) {
-			return false;
-		}
-		if (strcmp("1", m[key].c_str()) == 0) {
-			return true;
-		}
-		if (strcmp("0", m[key].c_str()) == 0) {
-			return false;
-		}
 
-		cerr << msg("ƒp[ƒXƒGƒ‰[",
-			"parse error.") << endl;
-		cerr << keyname + " " + "(1:ON 2:OFF 0:EXIT)" << endl << "> ";
-		int input;  cin >> input;
-		if (!input)	__exit(EXIT_SUCCESS);
-
-		return (input == 1) ? true : false;
+Value ConfigParser::getValue(string key) {
+	if (m.find(key) != m.end()) {
+		return m[key];
 	}
 	else {
-		cerr << keyname << msg("‚Í’è‹`‚³‚ê‚Ä‚¢‚Ü‚¹‚ñ", " is undefined") << endl;
-		cerr << keyname + " " + "(1:ON 2:OFF 0:EXIT)" << endl << "> ";
+		cerr << key << msg("ã¯å®šç¾©ã•ã‚Œã¦ã„ã¾ã›ã‚“", " is undefined") << endl;
+		cerr << key + " " + "(1:ON 2:OFF 0:EXIT)" << endl << "> ";
 		int input;  cin >> input;
 		if (!input)	__exit(EXIT_SUCCESS);
-		return (input == 1) ? true : false;
-	}
-}
-
-string ConfigParser::getValue(string key) {
-	transform(key.begin(), key.end(), key.begin(), ::tolower);
-	return m[key];
+		Value val;
+		val.type = TYPE_BOOL;
+		val.ptr = new bool;
+		CASTVAL(bool,val) = (input == 1) ? true : false;
+		return val;
+	}	
 }
 
 string ConfigParser::trim(string &str) {

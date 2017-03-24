@@ -1,5 +1,5 @@
 /*
- * Copyright(C) 2016 Cyber Defense Institute, Inc.
+ * Copyright(C) 2017 Cyber Defense Institute, Inc.
  *
  * This program is modified from the following code: 
  *

@@ -1,4 +1,4 @@
-#include "WriteWrapper.h"
+﻿#include "WriteWrapper.h"
 #include "globals.h"
 #include "util.h"
 
@@ -6,7 +6,7 @@
 #include <iomanip>
 
 void __exit(int code) {
-	cerr << "Press any key to continue..." << endl;
+	cerr << "Press Enter key to continue..." << endl;
 	char c;
 	cin.ignore();
 	cin.get(c);
@@ -16,7 +16,7 @@ void __exit(int code) {
 void _perror(char *msg) {
 	char buf[1024];
 	DWORD ec = GetLastError(); // Error Code
-	FormatMessage(
+	if (FormatMessage(
 		FORMAT_MESSAGE_FROM_SYSTEM |
 		FORMAT_MESSAGE_IGNORE_INSERTS,
 		NULL,
@@ -24,20 +24,40 @@ void _perror(char *msg) {
 		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 		buf,
 		1024,
-		NULL);
-	cerr << msg << ": " << buf << endl;
-}
-
-void mkdir(char *dirname) {
-	WriteWrapper dir("", 0, true);
-
-	if (dir.isLocal()) {
-		CreateDirectory(dirname, NULL);
+		NULL) == 0) {
+		cerr << "FormatMessage failed" << endl;
 	}
 	else {
-		dir.mkdir(dirname);
+		cerr << msg << ": " << buf << endl;
 	}
-	dir.close();
+}
+
+void mkdir(char *dirname, bool error) {
+	WriteWrapper dir("", 0, true);
+
+	string dirname_s = string(dirname);
+
+	size_t pos;
+	if ((pos = dirname_s.find_first_of('\\')) == string::npos) {
+		if (dir.isLocal()) {
+			if (!CreateDirectory(dirname, NULL)) {
+				if (error)
+					_perror("CreateDirectory");
+			}
+		}
+		else {
+			dir.mkdir(dirname);
+		}
+		dir.close();
+	}
+	else {
+		string topdir = dirname_s.substr(0, pos);
+		string subdir = dirname_s.substr(pos + 1);
+		mkdir((char*)topdir.c_str(), error);
+		chdir((char*)topdir.c_str());
+		mkdir((char*)subdir.c_str(), error);
+		chdir("..");
+	}
 }
 
 void chdir(char *dirname) {
@@ -45,7 +65,7 @@ void chdir(char *dirname) {
 
 	if (dir.isLocal()) {
 		if (!SetCurrentDirectory(dirname)) {
-			_perror("SetCurrentDirectory:");
+			_perror("SetCurrentDirectory");
 		}
 	}
 	else {
@@ -71,7 +91,7 @@ string msg(string jp, string en, WORD lang) {
 
 string join(vector<string> vs, string delim) {
 	string ret = "";
-	for (int i = 0; i < vs.size() - 1; i++) {
+	for (size_t i = 0; i < vs.size() - 1; i++) {
 		if (vs[i].empty()) continue;
 		ret += vs[i] + delim;
 	}
@@ -85,4 +105,33 @@ string hexdump(const unsigned char *s, size_t size) {
 		res << setw(2) << setfill('0') << hex << (unsigned int)s[i];
 	}
 	return res.str();
+}
+
+vector<pair<string, int>> findfiles(string filepath, bool error) {
+	// return found file and isdir
+	HANDLE hfind;
+	WIN32_FIND_DATA w32fd;
+	vector<pair<string, int>> paths;
+
+	hfind = FindFirstFile(filepath.c_str(), &w32fd);
+
+	if (hfind == INVALID_HANDLE_VALUE) {
+		if (error) {
+			_perror((char*)filepath.c_str());
+		}
+		return paths;
+	}
+	else {
+		do {
+			if (!strcmp(w32fd.cFileName, ".")
+				|| !strcmp(w32fd.cFileName, ".."))
+				continue;
+			paths.push_back(pair<string, int>((string)w32fd.cFileName, w32fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY));
+		} while (FindNextFile(hfind, &w32fd));
+	}
+	if (!FindClose(hfind)) {
+		_perror("FindClose");
+	}
+
+	return paths;
 }

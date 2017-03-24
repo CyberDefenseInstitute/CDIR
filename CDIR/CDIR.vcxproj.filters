@@ -39,6 +39,9 @@
     <ClInclude Include="globals.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -63,11 +66,6 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="collector.ico">
-      <Filter>リソース ファイル</Filter>
-    </Image>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="libressl-2.4.1-windows\x86\libssl-39.dll">
       <Filter>リソース ファイル</Filter>
     </None>
@@ -82,5 +80,10 @@
     <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib">
       <Filter>リソース ファイル</Filter>
     </Library>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="collector.ico">
+      <Filter>リソース ファイル</Filter>
+    </Image>
   </ItemGroup>
 </Project>
