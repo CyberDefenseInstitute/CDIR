@@ -28,13 +28,19 @@ void _perror(char *msg) {
 		cerr << "FormatMessage failed" << endl;
 	}
 	else {
-		cerr << msg << ": " << buf << endl;
+		if (msg)
+			cerr << msg << ": ";
+		cerr << buf << endl;
 	}
 }
 
 void mkdir(char *dirname, bool error) {
 	WriteWrapper dir("", 0, true);
 
+	if (dirname == NULL) {
+		fprintf(stderr, "dirname must not be NULL\n");
+		return;
+	}
 	string dirname_s = string(dirname);
 
 	size_t pos;
@@ -100,6 +106,8 @@ string join(vector<string> vs, string delim) {
 }
 
 string hexdump(const unsigned char *s, size_t size) {
+	if (s == NULL)
+		return "";
 	ostringstream res;
 	for (size_t i = 0; i < size; i++) {
 		res << setw(2) << setfill('0') << hex << (unsigned int)s[i];

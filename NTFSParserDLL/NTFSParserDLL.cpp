@@ -169,7 +169,11 @@ extern "C" DWORD __declspec(dllexport) StealthReadFile(FileInfo_t* fileInfo, BYT
 			*dataRemaining = fullDataLength - len - offset;
 			return 0; //Success
 		}
-		return 3;
+		else if (fileInfo->data->ReadData(offset, buffer, 1, &len))
+		{
+			return 3;
+		}
+		return 4;
 	}
 	return 2;
 }

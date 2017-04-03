@@ -41,6 +41,7 @@
 #pragma comment(lib, "libcrypto-38.lib")
 
 #define CHUNKSIZE 262144
+#define BLOCKSIZE 4096
 
 using namespace std;
 
@@ -264,7 +265,10 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 		offset = skipclusters * file->volume->GetClusterSize();
 	}
 
-	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, "C:\\$Extend\\$UsnJrnl:$J") == 0)) { // if using WebDAV and reading file except UsnJrnl
+	char journalpath[MAX_PATH + 1];
+	sprintf(journalpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
+
+	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
 		if (wfile.sendheader()) {
 			fprintf(stderr, "failed to send header.\n");
 			return -1;
@@ -276,7 +280,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 		int ret;
 
 		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize)) != 0) {
-			if(SparseSkip && strcmp(filepath, "C:\\$Extend\\$UsnJrnl:$J") == 0){
+			if(SparseSkip && strcmp(filepath, journalpath) == 0){
 				filesize -= offset;
 				skipclusters = 0;
 				file->data = (CAttrBase*)file->fileRecord->FindNextStream("$J", atrnum);
@@ -304,7 +308,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 				bytesleft = 1; // To continue loop
 				continue;
 			}
-			else if (offset < filesize) {
+			else if (ret == 4 && offset < filesize) {
 				filesize -= offset;
 				file->data = (CAttrBase*)file->fileRecord->FindNextStream(0,atrnum);
 				if (file->data == NULL) {
@@ -316,6 +320,12 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 				offset = 0;
 				bytesleft = 1; // To continue loop
 				continue;
+			}
+			else if (ret == 3) {
+				int adjustsize = CHUNKSIZE;
+				adjustsize -= BLOCKSIZE;
+				while (StealthReadFile(file, buf, adjustsize, offset, &bytesread, &bytesleft, filesize) == 3)
+					adjustsize -= BLOCKSIZE;
 			}
 			else{
 				_perror("Error reading file");
@@ -345,7 +355,10 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 			}
 		}
 		// osfile.write((char*)buf, bytesread);
-		wfile.write((char*)buf, bytesread);
+		if (wfile.write((char*)buf, bytesread) < 0) {
+			fprintf(stderr, "failed to write file.\n");
+			return -1;
+		}
 		offset += bytesread;
 	} while (bytesleft > 0 && offset < filesize);
 
@@ -356,7 +369,9 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	StealthCloseFile(file);
 
 	if (WriteWrapper::isLocal()) {
-		CopyFileTime(filepath, outpath);
+		if (CopyFileTime(filepath, outpath)) {
+			fprintf(stderr, "failed to copy filetime: %s\n", filepath);
+		}
 	}
 
 	if (osslog) {
@@ -562,6 +577,12 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 					cerr << msg("ジャーナル 取得失敗", "failed to save journal") << endl;
 				}
 			}
+			else {
+				cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+			}
+		}
+		else {
+			cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
 		}
 	}
 
@@ -771,7 +792,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2 - 初動対応用データ収集ツール", "CDIR Collector v1.2 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.2.1 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// getting config
@@ -831,7 +852,7 @@ int main(int argc, char **argv)
 		_perror("localtime");
 		__exit(EXIT_FAILURE);
 	}
-	if (!strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", t) || !strftime(t_beg, sizeof(t_beg), "%Y %m/%d %H:%M:%S", t)) {
+	if (!strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", t) || !strftime(t_beg, sizeof(t_beg), "%Y/%m/%d %H:%M:%S", t)) {
 		_perror("strftime");
 		__exit(EXIT_FAILURE);
 	}
@@ -888,7 +909,8 @@ int main(int argc, char **argv)
 		_perror("GetCurrentDirectory");
 		__exit(EXIT_FAILURE);
 	}
-	cerr << msg("保存先: ", "Output Directory: ") << outdir << endl;
+	if (WriteWrapper::isLocal())
+		cerr << msg("保存先: ", "Output Directory: ") << outdir << endl;
 
 	// start logging
 	ostringstream ossinfo, osslog;
@@ -974,7 +996,7 @@ int main(int argc, char **argv)
 		_perror("localtime");
 		__exit(EXIT_FAILURE);
 	}
-	if (!strftime(t_end, sizeof(t_end), "%Y %m/%d %H:%M:%S", t)) {
+	if (!strftime(t_end, sizeof(t_end), "%Y/%m/%d %H:%M:%S", t)) {
 		_perror("strftime");
 		__exit(EXIT_FAILURE);
 	}
@@ -1022,7 +1044,9 @@ int main(int argc, char **argv)
 
 	string log_str = ossinfo.str();
 	WriteWrapper log("collector-log.txt", log_str.size());
-	log.sendfile(log_str.c_str());
+	if (log.sendfile(log_str.c_str())) {
+		fprintf(stderr, "failed to save log");
+	}
 	log.close();
 	__exit(EXIT_SUCCESS);
 }

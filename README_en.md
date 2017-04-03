@@ -10,6 +10,7 @@ cdir-collector is a collection tool for first response. it collects the followin
 * Prefetch
 * EventLog
 * Registry
+* Web(History, Cookie)
 
 ## Download
 

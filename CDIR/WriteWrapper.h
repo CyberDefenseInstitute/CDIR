@@ -49,7 +49,7 @@ public:
 	string urlencode(string);
 	void mkdir(string);
 	static void chdir(string);
-	void sendfile(const char *);
+	int sendfile(const char *);
 	int sendheader(ULONGLONG = 0);
 	long long write(const char *, long long);
 	long long read(char *, long long);

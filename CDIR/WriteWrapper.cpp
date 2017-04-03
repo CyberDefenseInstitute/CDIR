@@ -69,7 +69,7 @@ WriteWrapper::WriteWrapper(char *_filename, ULONGLONG _filesize, bool isDirector
 				string header = "CONNECT " + address + ":443" + " HTTP/1.1" + "\r\n"
 					+ "Host: " + address + ":443\r\n"
 					+ "\r\n";
-				if (write(header.c_str(), header.length()) != 0) {
+				if (write(header.c_str(), header.length()) > 0) {
 					readuntil("\r\n\r\n");
 				}
 			}
@@ -101,6 +101,10 @@ WriteWrapper::WriteWrapper(char *_filename, ULONGLONG _filesize, bool isDirector
 	}
 	else {
 		osfile.open(filename, ios::out | ios::binary | ios::app);
+		if (osfile.fail() && !isDirectory) {
+			fprintf(stderr, "failed to open %s\n", filename);
+			return;
+		}
 	}
 }
 
@@ -249,7 +253,7 @@ string WriteWrapper::urlencode(string s) {
 void WriteWrapper::mkdir(string dirname) {
 	string header = "MKCOL " + join({uriroot, curdir, WriteWrapper::urlencode(dirname)}, "/") + "/" + " HTTP/1.1" + "\r\n"
 		+ "Host: " + address + ":" + to_string(port) + "\r\n\r\n";
-	if (write(header.c_str(), header.length()) == 0) {
+	if (write(header.c_str(), header.length()) <= 0) {
 		cerr << "write failed" << endl;
 	}
 }
@@ -263,15 +267,21 @@ void WriteWrapper::chdir(string dirname) {
 	}
 }
 
-void WriteWrapper::sendfile(const char *data) {
+int WriteWrapper::sendfile(const char *data) {
+	if (data == NULL) {
+		fprintf(stderr, "data must not be NULL\n");
+		return -1;
+	}
 	if(!isLocal())
 		if (sendheader()) {
 			fprintf(stderr, "failed to send header.\n");
-			return;
+			return -1;
 		}
-	if (write(data, filesize) == 0) {
+	if (write(data, filesize) <= 0) {
 		cerr << "write failed" << endl;
+		return -1;
 	}
+	return 0;
 }
 
 int WriteWrapper::sendheader(ULONGLONG size) {
@@ -285,7 +295,7 @@ int WriteWrapper::sendheader(ULONGLONG size) {
 		+ "Host: " + address + ":" + to_string(port) + "\r\n"
 		+ "Content-Length: " + to_string(filesize) + "\r\n"
 		+ "\r\n";
-	if (write(header.c_str(), header.length())) {
+	if (write(header.c_str(), header.length()) > 0) {
 		isHeaderSent = true;
 		return 0;
 	}
@@ -300,6 +310,9 @@ int WriteWrapper::sendheader(ULONGLONG size) {
 /// <param name="size">書き込むサイズ</param>
 /// <returns>失敗すると-1が返る</returns>
 long long WriteWrapper::write(const char *buf, long long size) {
+	if (buf == NULL) {
+		return -1;
+	}
 	if (status == STATUS_REMOTE) {
 		long long sent = 0;
 		int r;
@@ -330,6 +343,9 @@ long long WriteWrapper::write(const char *buf, long long size) {
 }
 
 long long WriteWrapper::read(char *buf, long long size) {
+	if (buf == NULL) {
+		return -1;
+	}
 	if (status == STATUS_REMOTE) {
 		long long recieved = 0;
 		int r;
@@ -384,10 +400,17 @@ string WriteWrapper::readuntil(string delim) {
 
 void WriteWrapper::close() {
 	if (status == STATUS_REMOTE) {
-		closesocket(sock);
-		WSACleanup();
+		if (closesocket(sock)) {
+			_perror("closesocket");
+		}
+		if (WSACleanup()) {
+			_perror("WSACleanup");
+		}
 	}
 	else {
 		osfile.close();
+		if (osfile.is_open()) {
+			fprintf(stderr, "close failed\n");
+		}
 	}
 }
