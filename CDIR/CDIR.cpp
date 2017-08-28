@@ -24,6 +24,7 @@
 #include <vector>
 #include <utility>
 #include <algorithm>
+#include <userenv.h>
 
 #include "CDIR.h"
 #include "util.h"
@@ -39,6 +40,7 @@
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "libcrypto-38.lib")
+#pragma comment(lib, "UserEnv.lib")
 
 #define CHUNKSIZE 262144
 #define BLOCKSIZE 4096
@@ -73,7 +75,7 @@ param_webdump = true;
 
 string param_output;
 
-char osvolume[3], sysdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], outdir[MAX_PATH + 1];
+char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], outdir[MAX_PATH + 1];
 
 HMODULE hNTFSParserdll;
 
@@ -552,37 +554,72 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	if (param_mftdump == true) {
 		// get MFT
 		sprintf(srcpath, "%s\\$MFT", osvolume);
-		sprintf(dstpath, "$MFT");
+		sprintf(dstpath, "%c_$MFT", osvolume[0]);
 		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-			cerr << msg("メタデータ 取得完了", "metadata is saved") << endl;
+			cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
 		}
 		else {
-			cerr << msg("メタデータ 取得失敗", "failed to save metadata") << endl;
+			cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+		}
+		if (osvolume[0] != usrvolume[0]) {
+			sprintf(srcpath, "%s\\$MFT", usrvolume);
+			sprintf(dstpath, "%c_$MFT", usrvolume[0]);
+			if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+				cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
+			}
+			else {
+				cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+			}
 		}
 	}
 
 	if (param_usndump == true) {
 		// get UsnJrnl	
 		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
-		sprintf(dstpath, "$UsnJrnl-$J");
+		sprintf(dstpath, "%c_$UsnJrnl-$J", osvolume[0]);
 
 		StealthGetFile(srcpath, dstpath, osslog, true);
 
+
 		if (WriteWrapper::isLocal()) {
-			if (!get_filesize("$UsnJrnl-$J")) {
+			if (!get_filesize(dstpath)) {
 				if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-					cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 				}
 				else {
-					cerr << msg("ジャーナル 取得失敗", "failed to save journal") << endl;
+					cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
 				}
 			}
 			else {
-				cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 			}
 		}
 		else {
-			cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+			cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+		}
+
+		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", usrvolume);
+		sprintf(dstpath, "%c_$UsnJrnl-$J", usrvolume[0]);
+
+		if (osvolume[0] != usrvolume[0] && PathFileExists(srcpath)) {
+			StealthGetFile(srcpath, dstpath, osslog, true);
+
+			if (WriteWrapper::isLocal()) {
+				if (!get_filesize(dstpath)) {
+					if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+						cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+					}
+					else {
+						cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
+					}
+				}
+				else {
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+				}
+			}
+			else {
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+			}
 		}
 	}
 
@@ -635,7 +672,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	// user list
 	vector<string> users;
 	{
-		auto files = findfiles(string(osvolume) + "\\Users\\*");
+		auto files = findfiles(string(usrvolume) + "\\Users\\*");
 		for (auto file : files) {
 			string fname = file.first;
 			if (fname == "."
@@ -666,8 +703,8 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Windows\\AppCompat\\Programs\\Amcache.hve", "Registry\\Amcache.hve"));
 
 		for (size_t i = 0; i < users.size(); i++) {
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
 		}
 
 		mkdir("Registry");
@@ -694,7 +731,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		for (auto user: users) {
 			// Firefrox
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Firefox", false);
@@ -719,7 +756,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// Chrome
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Chrome", false);
@@ -738,7 +775,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// upper IE10/Edge
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
 				auto files = findfiles(basepath + "*", false);
 				if (!files.empty()) {
 					mkdir("Web\\IE10_Edge", false);
@@ -874,12 +911,20 @@ int main(int argc, char **argv)
 			        "[ERROR] failed to get windows directory") << endl;
 		__exit(EXIT_FAILURE);
 	}
+	dwsize = MAX_PATH;
+	if (!GetProfilesDirectory(usrdir, &dwsize)) {
+		cerr << msg("[エラー] Usersディレクトリ",
+			"[ERROR] failed to get Users directory") << endl;
+		__exit(EXIT_FAILURE);
+	}
 	if (!GetCurrentDirectory(MAX_PATH + 1, curdir)) {
 		_perror("GetCurrentDirectory");
 		__exit(EXIT_FAILURE);
 	}
 
-	strncpy(osvolume, sysdir, 2); // copy drive letter
+	strncpy(osvolume, sysdir, 2); // copy sys_drive letter
+	strncpy(usrvolume, usrdir, 2); // copy usr_drive letter
+
 
 	GetNativeSystemInfo(&sysinfo);
 	if ((sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_AMD64) || (sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_IA64) == 64) {
