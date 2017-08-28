@@ -268,9 +268,9 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	}
 
 	char journalpath[MAX_PATH + 1];
-	sprintf(journalpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
+	sprintf(journalpath, "\\$Extend\\$UsnJrnl:$J");
 
-	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
+	if (!WriteWrapper::isLocal() && !(SparseSkip && strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
 		if (wfile.sendheader()) {
 			fprintf(stderr, "failed to send header.\n");
 			return -1;
@@ -282,7 +282,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 		int ret;
 
 		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize)) != 0) {
-			if(SparseSkip && strcmp(filepath, journalpath) == 0){
+			if(SparseSkip &&  strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0){
 				filesize -= offset;
 				skipclusters = 0;
 				file->data = (CAttrBase*)file->fileRecord->FindNextStream("$J", atrnum);
