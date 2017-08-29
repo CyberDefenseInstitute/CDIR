@@ -829,7 +829,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2.1 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.2.1z - 初動対応用データ収集ツール", "CDIR Collector v1.2.1z - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// getting config
