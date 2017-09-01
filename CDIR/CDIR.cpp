@@ -840,13 +840,9 @@ int main(int argc, char **argv)
 		__exit(EXIT_FAILURE);
 	}
 	PathRemoveFileSpec(exedir);
-	if (!SetCurrentDirectory(exedir)) {
-		_perror("SetCurrentDirectory:");
-		__exit(EXIT_FAILURE);
-	}
 
 	// getting config
-	string confnames[2] = {"cdir.ini", "cdir.conf"};
+	string confnames[2] = { std::string(exedir) + "\\cdir.ini", std::string(exedir) + "\\cdir.conf"};
 	for (string confname : confnames) {
 		config = new ConfigParser(confname);
 		if (config && config->isOpened()) {
