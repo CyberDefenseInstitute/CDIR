@@ -949,19 +949,12 @@ int main(int argc, char **argv)
 	}
 
 	sprintf(foldername, "%s_%s", computername, timestamp);
-	if (argc > 1) {
-		strncpy(outdir, argv[1], MAX_PATH + 1);
-	}else if (config->isSet("Output")) {
-		strncpy(outdir, (CASTVAL(string, config->getValue("Output"))).c_str(), MAX_PATH + 1);
-	}
-	else {
-		outdir[0] = '\0';
-	}
-	if (strlen(outdir) != 0 && !SetCurrentDirectory(outdir)) {
-		cerr << msg("保存先: ", "Output Directory: ") << outdir << endl;
-		cerr << msg("対応していない保存先です", "unsupported destination") << endl;
-		// _perror("SetCurrentDirectory:");
-		__exit(EXIT_FAILURE);
+	if (config->isSet("Output")) {
+		if (!SetCurrentDirectory((CASTVAL(string, config->getValue("Output"))).c_str())) {
+			cerr << msg("対応していない保存先です", "unsupported destination") << endl;
+			// _perror("SetCurrentDirectory:");
+			__exit(EXIT_FAILURE);
+		}
 	}
 
 	mkdir(foldername);
