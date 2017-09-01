@@ -25,6 +25,7 @@
 #include <utility>
 #include <algorithm>
 #include <userenv.h>
+#include <shlwapi.h>
 
 #include "CDIR.h"
 #include "util.h"
@@ -41,6 +42,7 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "libcrypto-38.lib")
 #pragma comment(lib, "UserEnv.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 #define CHUNKSIZE 262144
 #define BLOCKSIZE 4096
@@ -75,7 +77,7 @@ param_webdump = true;
 
 string param_output;
 
-char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], outdir[MAX_PATH + 1];
+char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], exedir[MAX_PATH + 1], outdir[MAX_PATH + 1];
 
 HMODULE hNTFSParserdll;
 
@@ -509,7 +511,7 @@ int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
 		return -1;
 	}
 
-	sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", curdir, computername);
+	sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", exedir, computername);
 
 	if (launchprocess(tmp, &status)) {
 		return -1;
@@ -832,6 +834,17 @@ int main(int argc, char **argv)
 	cout << msg("CDIR Collector v1.2.1z - 初動対応用データ収集ツール", "CDIR Collector v1.2.1z - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
+	// set curdir -> exedir
+	if (!GetModuleFileName(NULL, exedir, MAX_PATH)) {
+		_perror("GetModuleFileName");
+		__exit(EXIT_FAILURE);
+	}
+	PathRemoveFileSpec(exedir);
+	if (!SetCurrentDirectory(exedir)) {
+		_perror("SetCurrentDirectory:");
+		__exit(EXIT_FAILURE);
+	}
+
 	// getting config
 	string confnames[2] = {"cdir.ini", "cdir.conf"};
 	for (string confname : confnames) {
@@ -940,13 +953,21 @@ int main(int argc, char **argv)
 	}
 
 	sprintf(foldername, "%s_%s", computername, timestamp);
-	if (config->isSet("Output")) {
-		if (!SetCurrentDirectory((CASTVAL(string,config->getValue("Output"))).c_str())) {
-			cerr << msg("対応していない保存先です", "unsupported destination") << endl;
-			// _perror("SetCurrentDirectory:");
-			__exit(EXIT_FAILURE);
-		}
+	if (argc > 1) {
+		strncpy(outdir, argv[1], MAX_PATH + 1);
+	}else if (config->isSet("Output")) {
+		strncpy(outdir, (CASTVAL(string, config->getValue("Output"))).c_str(), MAX_PATH + 1);
 	}
+	else {
+		outdir[0] = '\0';
+	}
+	if (strlen(outdir) != 0 && !SetCurrentDirectory(outdir)) {
+		cerr << msg("保存先: ", "Output Directory: ") << outdir << endl;
+		cerr << msg("対応していない保存先です", "unsupported destination") << endl;
+		// _perror("SetCurrentDirectory:");
+		__exit(EXIT_FAILURE);
+	}
+
 	mkdir(foldername);
 	chdir(foldername);
 
@@ -999,7 +1020,7 @@ int main(int argc, char **argv)
 
 
 	if (param_memdump) {
-		if (filecheck((char*)((string)curdir + "\\winpmem.exe").c_str())) {
+		if (filecheck((char*)((string)exedir + "\\winpmem.exe").c_str())) {
 			cerr << msg("メモリダンプ用プログラムがありません",
 				"No memory dump program found") << endl;
 		}
