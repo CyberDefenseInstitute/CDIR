@@ -24,6 +24,8 @@
 #include <vector>
 #include <utility>
 #include <algorithm>
+#include <userenv.h>
+#include <shlwapi.h>
 
 #include "CDIR.h"
 #include "util.h"
@@ -39,6 +41,8 @@
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "libcrypto-38.lib")
+#pragma comment(lib, "UserEnv.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 #define CHUNKSIZE 262144
 #define BLOCKSIZE 4096
@@ -73,7 +77,7 @@ param_webdump = true;
 
 string param_output;
 
-char osvolume[3], sysdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], outdir[MAX_PATH + 1];
+char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], exedir[MAX_PATH + 1], outdir[MAX_PATH + 1];
 
 HMODULE hNTFSParserdll;
 
@@ -227,7 +231,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	FileInfo_t *file;
 	if ((file = StealthOpenFile(filepath)) == NULL) {
 		fprintf(stderr, "could not open file: %s\n", filepath);
-		__exit(EXIT_FAILURE);
+		return -1;
 	};
 
 	ULONGLONG filesize = (ULONGLONG)file->data->GetDataSize();
@@ -266,9 +270,9 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	}
 
 	char journalpath[MAX_PATH + 1];
-	sprintf(journalpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
+	sprintf(journalpath, "\\$Extend\\$UsnJrnl:$J");
 
-	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
+	if (!WriteWrapper::isLocal() && !(SparseSkip && strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
 		if (wfile.sendheader()) {
 			fprintf(stderr, "failed to send header.\n");
 			return -1;
@@ -280,7 +284,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 		int ret;
 
 		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize)) != 0) {
-			if(SparseSkip && strcmp(filepath, journalpath) == 0){
+			if(SparseSkip &&  strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0){
 				filesize -= offset;
 				skipclusters = 0;
 				file->data = (CAttrBase*)file->fileRecord->FindNextStream("$J", atrnum);
@@ -507,7 +511,7 @@ int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
 		return -1;
 	}
 
-	sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", curdir, computername);
+	sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", exedir, computername);
 
 	if (launchprocess(tmp, &status)) {
 		return -1;
@@ -552,37 +556,72 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	if (param_mftdump == true) {
 		// get MFT
 		sprintf(srcpath, "%s\\$MFT", osvolume);
-		sprintf(dstpath, "$MFT");
+		sprintf(dstpath, "%c_$MFT", osvolume[0]);
 		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-			cerr << msg("メタデータ 取得完了", "metadata is saved") << endl;
+			cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
 		}
 		else {
-			cerr << msg("メタデータ 取得失敗", "failed to save metadata") << endl;
+			cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+		}
+		if (osvolume[0] != usrvolume[0]) {
+			sprintf(srcpath, "%s\\$MFT", usrvolume);
+			sprintf(dstpath, "%c_$MFT", usrvolume[0]);
+			if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+				cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
+			}
+			else {
+				cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+			}
 		}
 	}
 
 	if (param_usndump == true) {
 		// get UsnJrnl	
 		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
-		sprintf(dstpath, "$UsnJrnl-$J");
+		sprintf(dstpath, "%c_$UsnJrnl-$J", osvolume[0]);
 
 		StealthGetFile(srcpath, dstpath, osslog, true);
 
+
 		if (WriteWrapper::isLocal()) {
-			if (!get_filesize("$UsnJrnl-$J")) {
+			if (!get_filesize(dstpath)) {
 				if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-					cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 				}
 				else {
-					cerr << msg("ジャーナル 取得失敗", "failed to save journal") << endl;
+					cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
 				}
 			}
 			else {
-				cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 			}
 		}
 		else {
-			cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+			cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+		}
+
+		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", usrvolume);
+		sprintf(dstpath, "%c_$UsnJrnl-$J", usrvolume[0]);
+
+		if (osvolume[0] != usrvolume[0] && PathFileExists(srcpath)) {
+			StealthGetFile(srcpath, dstpath, osslog, true);
+
+			if (WriteWrapper::isLocal()) {
+				if (!get_filesize(dstpath)) {
+					if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+						cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+					}
+					else {
+						cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
+					}
+				}
+				else {
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+				}
+			}
+			else {
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+			}
 		}
 	}
 
@@ -635,7 +674,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	// user list
 	vector<string> users;
 	{
-		auto files = findfiles(string(osvolume) + "\\Users\\*");
+		auto files = findfiles(string(usrvolume) + "\\Users\\*");
 		for (auto file : files) {
 			string fname = file.first;
 			if (fname == "."
@@ -666,8 +705,8 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Windows\\AppCompat\\Programs\\Amcache.hve", "Registry\\Amcache.hve"));
 
 		for (size_t i = 0; i < users.size(); i++) {
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
 		}
 
 		mkdir("Registry");
@@ -694,7 +733,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		for (auto user: users) {
 			// Firefrox
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Firefox", false);
@@ -719,7 +758,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// Chrome
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Chrome", false);
@@ -738,7 +777,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// upper IE10/Edge
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
 				auto files = findfiles(basepath + "*", false);
 				if (!files.empty()) {
 					mkdir("Web\\IE10_Edge", false);
@@ -792,11 +831,23 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2.1 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.2.1_20171226 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1_20171226 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
+	// set curdir -> exedir
+	if (!GetModuleFileName(NULL, exedir, MAX_PATH)) {
+		_perror("GetModuleFileName");
+		__exit(EXIT_FAILURE);
+	}
+	PathRemoveFileSpec(exedir);
+
+	if (!SetCurrentDirectory(exedir)) {
+		_perror("SetCurrentDirectory:");
+		__exit(EXIT_FAILURE);
+	}
+
 	// getting config
-	string confnames[2] = {"cdir.ini", "cdir.conf"};
+	string confnames[2] = { std::string(exedir) + "\\cdir.ini", std::string(exedir) + "\\cdir.conf"};
 	for (string confname : confnames) {
 		config = new ConfigParser(confname);
 		if (config && config->isOpened()) {
@@ -874,12 +925,20 @@ int main(int argc, char **argv)
 			        "[ERROR] failed to get windows directory") << endl;
 		__exit(EXIT_FAILURE);
 	}
+	dwsize = MAX_PATH;
+	if (!GetProfilesDirectory(usrdir, &dwsize)) {
+		cerr << msg("[エラー] Usersディレクトリ",
+			"[ERROR] failed to get Users directory") << endl;
+		__exit(EXIT_FAILURE);
+	}
 	if (!GetCurrentDirectory(MAX_PATH + 1, curdir)) {
 		_perror("GetCurrentDirectory");
 		__exit(EXIT_FAILURE);
 	}
 
-	strncpy(osvolume, sysdir, 2); // copy drive letter
+	strncpy(osvolume, sysdir, 2); // copy sys_drive letter
+	strncpy(usrvolume, usrdir, 2); // copy usr_drive letter
+
 
 	GetNativeSystemInfo(&sysinfo);
 	if ((sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_AMD64) || (sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_IA64) == 64) {
@@ -896,12 +955,13 @@ int main(int argc, char **argv)
 
 	sprintf(foldername, "%s_%s", computername, timestamp);
 	if (config->isSet("Output")) {
-		if (!SetCurrentDirectory((CASTVAL(string,config->getValue("Output"))).c_str())) {
+		if (!SetCurrentDirectory((CASTVAL(string, config->getValue("Output"))).c_str())) {
 			cerr << msg("対応していない保存先です", "unsupported destination") << endl;
 			// _perror("SetCurrentDirectory:");
 			__exit(EXIT_FAILURE);
 		}
 	}
+
 	mkdir(foldername);
 	chdir(foldername);
 
@@ -954,7 +1014,7 @@ int main(int argc, char **argv)
 
 
 	if (param_memdump) {
-		if (filecheck((char*)((string)curdir + "\\winpmem.exe").c_str())) {
+		if (filecheck((char*)((string)exedir + "\\winpmem.exe").c_str())) {
 			cerr << msg("メモリダンプ用プログラムがありません",
 				"No memory dump program found") << endl;
 		}
