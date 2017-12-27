@@ -231,7 +231,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	FileInfo_t *file;
 	if ((file = StealthOpenFile(filepath)) == NULL) {
 		fprintf(stderr, "could not open file: %s\n", filepath);
-		__exit(EXIT_FAILURE);
+		return -1;
 	};
 
 	ULONGLONG filesize = (ULONGLONG)file->data->GetDataSize();
@@ -831,7 +831,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2.1z - 初動対応用データ収集ツール", "CDIR Collector v1.2.1z - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.2.1_20171226 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1_20171226 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir
