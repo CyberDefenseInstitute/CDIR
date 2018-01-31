@@ -1,5 +1,5 @@
 ﻿/*
- * Copyright(C) 2017 Cyber Defense Institute, Inc.
+ * Copyright(C) 2018 Cyber Defense Institute, Inc.
  *
  * This program/include file is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as published
@@ -227,7 +227,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	FileInfo_t *file;
 	if ((file = StealthOpenFile(filepath)) == NULL) {
 		fprintf(stderr, "could not open file: %s\n", filepath);
-		__exit(EXIT_FAILURE);
+		return -1;
 	};
 
 	ULONGLONG filesize = (ULONGLONG)file->data->GetDataSize();
@@ -792,7 +792,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2.1 - 初動対応用データ収集ツール", "CDIR Collector v1.2.1 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.2.2 - 初動対応用データ収集ツール", "CDIR Collector v1.2.2 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// getting config
