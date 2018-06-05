@@ -826,8 +826,10 @@ CNTFSVolume::CNTFSVolume(_TCHAR volume)
 	Version = 0;
 	ClearAttrRawCB();
 
-	if (!OpenVolume(volume))
+	if (!OpenVolume(volume)) {
+		fprintf(stderr, "Volume open error: %c\n", volume);
 		return;
+	}
 
 	// Verify NTFS volume version (must >= 3.0)
 

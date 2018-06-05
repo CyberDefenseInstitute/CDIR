@@ -22,15 +22,16 @@ ConfigParser::ConfigParser(string path)
 				string key = l.substr(0, idx);
 				string val = l.substr(idx+1);
 
-				// trim string
+				// trim key string
 				key = trim(key);
-				val = trim(val);
+
 				if (CONFIGLIST.find(key) != CONFIGLIST.end()) {
 					Value value;
 					value.type = CONFIGLIST[key];
 					switch (CONFIGLIST[key]) {
 					case TYPE_BOOL:
 						value.ptr = new bool;
+						val = trim(val);
 						*((bool*)value.ptr) = [=]() {
 							if (_stricmp("true", val.c_str()) == 0) {
 								return true;
@@ -56,11 +57,13 @@ ConfigParser::ConfigParser(string path)
 						break;
 					case TYPE_INT:
 						value.ptr = new int;
+						val = trim(val);
 						*((int*)value.ptr) = atoi(val.c_str());
 						break;
 					case TYPE_STRING:
 						value.ptr = new string;
-						*((string*)value.ptr) = val;
+						for (idx = 0; idx < val.size() && isspace(val[idx]); idx++);
+						*((string*)value.ptr) = val.substr(idx);
 						break;
 					}
 					m[key] = value;

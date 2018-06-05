@@ -24,6 +24,8 @@
 #include <vector>
 #include <utility>
 #include <algorithm>
+#include <userenv.h>
+#include <shlwapi.h>
 
 #include "CDIR.h"
 #include "util.h"
@@ -39,6 +41,8 @@
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "libcrypto-38.lib")
+#pragma comment(lib, "UserEnv.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 #define CHUNKSIZE 262144
 #define BLOCKSIZE 4096
@@ -65,15 +69,18 @@ int WriteWrapper::status = 0;
 
 bool param_memdump = true,
 param_mftdump = true,
+param_securedump = true,
 param_usndump = true,
 param_evtxdump = true,
 param_prefdump = true,
 param_regdump = true,
-param_webdump = true;
+param_webdump = true,
+param_wmidump = true,
+param_srumdump = true;
 
 string param_output;
 
-char osvolume[3], sysdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], outdir[MAX_PATH + 1];
+char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], exedir[MAX_PATH + 1], outdir[MAX_PATH + 1];
 
 HMODULE hNTFSParserdll;
 
@@ -266,9 +273,11 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	}
 
 	char journalpath[MAX_PATH + 1];
-	sprintf(journalpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
+	sprintf(journalpath, "\\$Extend\\$UsnJrnl:$J");
+	char securitypath[MAX_PATH + 1];
+	sprintf(securitypath, "\\$SECURE:$SDS");
 
-	if (!WriteWrapper::isLocal() && !(SparseSkip && strcmp(filepath, journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
+	if (!WriteWrapper::isLocal() && !(SparseSkip && strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0)) { // if using WebDAV and reading file except UsnJrnl
 		if (wfile.sendheader()) {
 			fprintf(stderr, "failed to send header.\n");
 			return -1;
@@ -280,7 +289,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 		int ret;
 
 		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize)) != 0) {
-			if(SparseSkip && strcmp(filepath, journalpath) == 0){
+			if(SparseSkip && strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0){
 				filesize -= offset;
 				skipclusters = 0;
 				file->data = (CAttrBase*)file->fileRecord->FindNextStream("$J", atrnum);
@@ -310,7 +319,11 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 			}
 			else if (ret == 4 && offset < filesize) {
 				filesize -= offset;
-				file->data = (CAttrBase*)file->fileRecord->FindNextStream(0,atrnum);
+				if(strcmp(&(filepath[2]), securitypath) == 0)
+					file->data = (CAttrBase*)file->fileRecord->FindNextStream("$SDS", atrnum);
+				else
+					file->data = (CAttrBase*)file->fileRecord->FindNextStream(0,atrnum);
+
 				if (file->data == NULL) {
 					fprintf(stderr, "failed to find nextstream.\n");
 					return -1;
@@ -506,8 +519,10 @@ int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
 		fprintf(stderr, "computername is NULL.\n");
 		return -1;
 	}
-
-	sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", curdir, computername);
+	if (config->isSet("MemoryDumpCmdline"))
+		sprintf(tmp, "%s\\%s", exedir, (CASTVAL(string, config->getValue("MemoryDumpCmdline"))).c_str());
+	else
+		sprintf(tmp, "%s\\winpmem.exe --output RAM_%s.aff4", exedir, computername);
 
 	if (launchprocess(tmp, &status)) {
 		return -1;
@@ -525,21 +540,25 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 	// order of collection
 	// $MFT
+	// $SECURE
 	// $UsnJrnl:$J (skip beginning sparse data)
-	// Evtx
-	// Prefetch
+	// Evtx (%SystemRoot%\winevt\Logs)
+	// Prefetch (C:\Windows\Prefetch)
 	// Registry 
 	// * C:\Windows\System32\config\
-	//   * SAM
-	//   * Security
-	//   * Software
-	//	 * System
-	// 
+	//   * SAM, Security, Software, System
 	// * %USERNAME%
 	//   * ntuser.dat
+	//   * Appdata\Roaming\UsrClass.dat
+	// WMI (C:\Windows\System32\WBEM\Repository)
+	// SRUM (C:\Windows\System32)
+	// Web
+	// * C:\Users\[user]\AppData\Roaming\Mozilla\Firefox\Profiles\
+	//	* cookies.sqlite, places.sqlite
+	// * C:\Users\[user]\AppData\Local\Google\Chrome\User Data\
+	//  * History
+	// * C:\Users\[user]\AppData\Local\Microsoft\Windows\WebCache\
 	// 
-	//   * Appdata\Roaming
-	//     * UsrClass.dat
 	// pagefile.sys
 
 	PVOID oldval = NULL;
@@ -550,39 +569,97 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	char dstpath[MAX_PATH + 1];
 
 	if (param_mftdump == true) {
+		mkdir("NTFS");
 		// get MFT
 		sprintf(srcpath, "%s\\$MFT", osvolume);
-		sprintf(dstpath, "$MFT");
+		sprintf(dstpath, "NTFS\\%c_$MFT", osvolume[0]);
 		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-			cerr << msg("メタデータ 取得完了", "metadata is saved") << endl;
+			cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
 		}
 		else {
-			cerr << msg("メタデータ 取得失敗", "failed to save metadata") << endl;
+			cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+		}
+
+		if (osvolume[0] != usrvolume[0]) {
+			sprintf(srcpath, "%s\\$MFT", usrvolume);
+			sprintf(dstpath, "NTFS\\%c_$MFT", usrvolume[0]);
+			if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+				cerr << msg("メタデータ 取得完了 ", "metadata is saved ") << srcpath << endl;
+			}
+			else {
+				cerr << msg("メタデータ 取得失敗 ", "failed to save metadata ") << srcpath << endl;
+			}
+		}
+	}
+
+	if (param_securedump == true) {
+
+		sprintf(srcpath, "%s\\$SECURE:$SDS", osvolume);
+		sprintf(dstpath, "NTFS\\%c_$SECURE-$SDS", usrvolume[0]);
+		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+			cerr << msg("セキュリティ 取得完了 ", "$SECURE:$SDS is saved ") << srcpath << endl;
+		}
+		else {
+			cerr << msg("セキュリティ 取得失敗 ", "failed to save $SECURE:$SDS ") << srcpath << endl;
+		}
+		if (osvolume[0] != usrvolume[0]) {
+			sprintf(srcpath, "%s\\$SECURE:$SDS", osvolume);
+			sprintf(dstpath, "NTFS\\%c_$SECURE-$SDS", usrvolume[0]);
+			if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+				cerr << msg("セキュリティ 取得完了 ", "$SECURE:$SDS is saved ") << srcpath << endl;
+			}
+			else {
+				cerr << msg("セキュリティ 取得失敗 ", "failed to save $SECURE:$SDS ") << srcpath << endl;
+			}
 		}
 	}
 
 	if (param_usndump == true) {
 		// get UsnJrnl	
 		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", osvolume);
-		sprintf(dstpath, "$UsnJrnl-$J");
+		sprintf(dstpath, "NTFS\\%c_$UsnJrnl-$J", osvolume[0]);
 
 		StealthGetFile(srcpath, dstpath, osslog, true);
 
 		if (WriteWrapper::isLocal()) {
-			if (!get_filesize("$UsnJrnl-$J")) {
+			if (!get_filesize(dstpath)) {
 				if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
-					cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 				}
 				else {
-					cerr << msg("ジャーナル 取得失敗", "failed to save journal") << endl;
+					cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
 				}
 			}
 			else {
-				cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
 			}
 		}
 		else {
-			cerr << msg("ジャーナル 取得完了", "journal is saved") << endl;
+			cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+		}
+
+		sprintf(srcpath, "%s\\$Extend\\$UsnJrnl:$J", usrvolume);
+		sprintf(dstpath, "NTFS\\%c_$UsnJrnl-$J", usrvolume[0]);
+
+		if (osvolume[0] != usrvolume[0] && PathFileExists(srcpath)) {
+			StealthGetFile(srcpath, dstpath, osslog, true);
+
+			if (WriteWrapper::isLocal()) {
+				if (!get_filesize(dstpath)) {
+					if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+						cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+					}
+					else {
+						cerr << msg("ジャーナル 取得失敗 ", "failed to save journal ") << srcpath << endl;
+					}
+				}
+				else {
+					cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+				}
+			}
+			else {
+				cerr << msg("ジャーナル 取得完了 ", "journal is saved ") << srcpath << endl;
+			}
 		}
 	}
 
@@ -635,7 +712,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	// user list
 	vector<string> users;
 	{
-		auto files = findfiles(string(osvolume) + "\\Users\\*");
+		auto files = findfiles(string(usrvolume) + "\\Users\\*");
 		for (auto file : files) {
 			string fname = file.first;
 			if (fname == "."
@@ -653,9 +730,17 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		// get registry
 		vector<string> paths = {
 			"\\config\\SAM",
+			"\\config\\SAM.LOG1",
+			"\\config\\SAM.LOG2",
 			"\\config\\SECURITY",
+			"\\config\\SECURITY.LOG1",
+			"\\config\\SECURITY.LOG2",
 			"\\config\\SOFTWARE",
-			"\\config\\SYSTEM"
+			"\\config\\SOFTWARE.LOG1",
+			"\\config\\SOFTWARE.LOG2",
+			"\\config\\SYSTEM",
+			"\\config\\SYSTEM.LOG1",
+			"\\config\\SYSTEM.LOG2"
 		};
 		vector<pair<string, string> > paths_pair;
 		for (size_t i = 0; i < paths.size(); i++) {
@@ -663,11 +748,17 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		}
 
 		// Amcache.hve
-		paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Windows\\AppCompat\\Programs\\Amcache.hve", "Registry\\Amcache.hve"));
+		paths_pair.push_back(pair<string, string>(string(windir) + "\\AppCompat\\Programs\\Amcache.hve", "Registry\\Amcache.hve"));
+		paths_pair.push_back(pair<string, string>(string(windir) + "\\AppCompat\\Programs\\Amcache.hve.LOG1", "Registry\\Amcache.hve.LOG1"));
+		paths_pair.push_back(pair<string, string>(string(windir) + "\\AppCompat\\Programs\\Amcache.hve.LOG2", "Registry\\Amcache.hve.LOG2"));
 
 		for (size_t i = 0; i < users.size(); i++) {
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
-			paths_pair.push_back(pair<string, string>(string(osvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry\\" + users[i] + "_NTUSER.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat.LOG1", "Registry\\" + users[i] + "_NTUSER.dat.LOG1"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\NTUSER.dat.LOG2", "Registry\\" + users[i] + "_NTUSER.dat.LOG2"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry\\" + users[i] + "_UsrClass.dat"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG1", "Registry\\" + users[i] + "_UsrClass.dat.LOG1"));
+			paths_pair.push_back(pair<string, string>(string(usrvolume) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG2", "Registry\\" + users[i] + "_UsrClass.dat.LOG2"));
 		}
 
 		mkdir("Registry");
@@ -687,6 +778,51 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		cerr << msg("レジストリ 取得完了", "registry is saved") << endl;
 	}
 
+	if (param_wmidump == true) {
+		// get WMI data
+		mkdir("WMI");
+
+		string basepath = string(sysdir) + "\\wbem\\Repository\\";
+		auto files = findfiles(basepath + "*", false);
+
+		for (auto file : files) {
+			string srcpath = basepath + file.first;
+			string dstpath = "WMI\\" + file.first;
+			if (StealthGetFile((char*)srcpath.c_str(), (char*)dstpath.c_str(), osslog, false)) {
+				cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+			}
+		}
+		cerr << msg("WMI 取得完了", "wmi data is saved") << endl;
+
+	}
+
+	if (param_srumdump == true) {
+		// get SRUM data
+		mkdir("SRUM");
+
+		string basepath = string(sysdir) + "\\sru\\";
+		auto files = findfiles(basepath + "*", false);
+
+		bool flag = false;
+		for (auto file : files) {
+			string srcpath = basepath + file.first;
+			string dstpath = "SRUM\\" + file.first;
+			if (StealthGetFile((char*)srcpath.c_str(), (char*)dstpath.c_str(), osslog, false)) {
+				cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+			}
+			else {
+				flag = true;
+			}
+		}
+		if (flag) {
+			cerr << msg("SRUM 取得完了", "srum is saved") << endl;
+		}
+		else {
+			cerr << msg("SRUM 無し", "no srum found") << endl;
+		}
+
+	}
+
 	if (param_webdump == true) {
 		// get webbrowser data
 		mkdir("Web");
@@ -694,7 +830,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		for (auto user: users) {
 			// Firefrox
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Firefox", false);
@@ -719,7 +855,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// Chrome
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
 				auto profiles = findfiles(basepath + "*", false);
 				if (!profiles.empty()) {
 					mkdir("Web\\Chrome", false);
@@ -738,7 +874,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 			// upper IE10/Edge
 			{
-				string basepath = string(osvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
+				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
 				auto files = findfiles(basepath + "*", false);
 				if (!files.empty()) {
 					mkdir("Web\\IE10_Edge", false);
@@ -755,7 +891,7 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 		cerr << msg("インターネット(Web) 取得完了", "internet artifact data is saved") << endl;
 	}
-	
+
 	return 0;
 }
 
@@ -792,11 +928,23 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.2.2 - 初動対応用データ収集ツール", "CDIR Collector v1.2.2 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.1 - 初動対応用データ収集ツール", "CDIR Collector v1.3.1 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
+	// set curdir -> exedir
+	if (!GetModuleFileName(NULL, exedir, MAX_PATH)) {
+		_perror("GetModuleFileName");
+		__exit(EXIT_FAILURE);
+	}
+	PathRemoveFileSpec(exedir);
+
+	if (!SetCurrentDirectory(exedir)) {
+		_perror("SetCurrentDirectory:");
+		__exit(EXIT_FAILURE);		
+	}
+
 	// getting config
-	string confnames[2] = {"cdir.ini", "cdir.conf"};
+	string confnames[2] = { std::string(exedir) + "\\cdir.ini", std::string(exedir) + "\\cdir.conf" };
 	for (string confname : confnames) {
 		config = new ConfigParser(confname);
 		if (config && config->isOpened()) {
@@ -811,10 +959,13 @@ int main(int argc, char **argv)
 		vector<pair<vector<string>, void*>> params = {
 			{{"MemoryDump", "メモリダンプ", "Memory dump"}, &param_memdump},
 			{{"MFT", "MFT", "MFT"}, &param_mftdump},
+			{{"Secure", "Secure", "Secure" }, &param_securedump},
 			{{"UsnJrnl", "ジャーナル", "UsnJrnl"}, &param_usndump},
 			{{"EventLog", "イベントログ", "Event log"}, &param_evtxdump},
 			{{"Prefetch", "プリフェッチ", "Prefetch"}, &param_prefdump},
 			{{"Registry", "レジストリ", "Registry"}, &param_regdump},
+			{{"WMI", "WMI", "WMI"}, &param_wmidump},
+			{{"SRUM", "SRUM", "SRUM" }, &param_srumdump},
 			{{"Web", "ブラウザ", "Web"}, &param_webdump}
 		};
 
@@ -874,12 +1025,30 @@ int main(int argc, char **argv)
 			        "[ERROR] failed to get windows directory") << endl;
 		__exit(EXIT_FAILURE);
 	}
+	dwsize = MAX_PATH;
+	if (!GetProfilesDirectory(usrdir, &dwsize)) {
+		cerr << msg("[エラー] Usersディレクトリ",
+			"[ERROR] failed to get Users directory") << endl;
+		__exit(EXIT_FAILURE);
+	}
 	if (!GetCurrentDirectory(MAX_PATH + 1, curdir)) {
 		_perror("GetCurrentDirectory");
 		__exit(EXIT_FAILURE);
 	}
 
-	strncpy(osvolume, sysdir, 2); // copy drive letter
+	strncpy(osvolume, sysdir, 2); // copy sys_drive letter
+	strncpy(usrvolume, usrdir, 2); // copy usr_drive letter
+
+
+	if (config->isSet("Target")) {
+		strncpy(osvolume, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
+		strncpy(usrvolume, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
+		strncpy(sysdir, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
+		strncpy(windir, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
+		cerr << "Target: " << osvolume << endl;
+	}
+
+	osvolume[sizeof(osvolume) - 1] = '\0'; // null terminate
 
 	GetNativeSystemInfo(&sysinfo);
 	if ((sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_AMD64) || (sysinfo.wProcessorArchitecture & PROCESSOR_ARCHITECTURE_IA64) == 64) {
@@ -894,14 +1063,19 @@ int main(int argc, char **argv)
 		__exit(EXIT_FAILURE);
 	}
 
-	sprintf(foldername, "%s_%s", computername, timestamp);
-	if (config->isSet("Output")) {
-		if (!SetCurrentDirectory((CASTVAL(string,config->getValue("Output"))).c_str())) {
+	if (config->isSet("Target"))
+		sprintf(foldername, "%s_%c_%s", computername, osvolume[0], timestamp);
+	else
+		sprintf(foldername, "%s_%s", computername, timestamp);
+
+	if (config->isSet("Output")) {	
+		if (!SetCurrentDirectory((CASTVAL(string, config->getValue("Output"))).c_str())) {
 			cerr << msg("対応していない保存先です", "unsupported destination") << endl;
 			// _perror("SetCurrentDirectory:");
 			__exit(EXIT_FAILURE);
 		}
 	}
+
 	mkdir(foldername);
 	chdir(foldername);
 
@@ -954,7 +1128,7 @@ int main(int argc, char **argv)
 
 
 	if (param_memdump) {
-		if (filecheck((char*)((string)curdir + "\\winpmem.exe").c_str())) {
+		if (!(config->isSet("MemoryDumpCmdline")) && filecheck((char*)((string)exedir + "\\winpmem.exe").c_str())) {
 			cerr << msg("メモリダンプ用プログラムがありません",
 				"No memory dump program found") << endl;
 		}
@@ -978,7 +1152,7 @@ int main(int argc, char **argv)
 	}
 	else {
 		cerr << msg("解析用データ取得失敗",
-			"Failed to collect data for analysdis") << endl;
+			"Failed to collect data for analysis") << endl;
 	}
 
 

@@ -5,12 +5,22 @@
 cdir-collectorは初動対応時のデータ保全を支援するためのツールです。Windows PC上の以下のデータを取得することが可能です。
 
 * メモリ
-* MFT
-* UsnJrnl
+* NTFS
+  * $MFT
+  * $SECURE:$SDS
+  * $UsnJrnl:$J
 * プリフェッチ
 * イベントログ
 * レジストリ
-* Web(履歴、クッキー)
+  * Amcache.hve
+  * SAM, SECURITY, SOFTWARE, SYSTEM
+  * NTUser.dat, UsrClass.dat
+* WMI
+* SRUM
+* Web
+  * Default_History (Chrome)
+  * default_cookies.sqlite, default_places.sqlite (Firefox)
+  * WebCacheV01.dat (IE, Edge)
 
 ## ダウンロード
 
@@ -20,7 +30,7 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 
 ## ビルド
 
-ソースコードはVisual Studio 2015で読み込みビルドすることができます。cdir-collectorの構成ファイルは以下の通りです。
+ソースコードはVisual Studio 2017で読み込みビルドすることができます。cdir-collectorの構成ファイルは以下の通りです。
 
 * cdir.ini
 * cdir-collector.exe

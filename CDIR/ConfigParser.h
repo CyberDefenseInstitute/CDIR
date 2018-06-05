@@ -32,12 +32,17 @@ struct c_ignorecase:std::binary_function<string, string, bool> {
 static map<string, TYPE_ID, c_ignorecase> CONFIGLIST = {
 	{"MemoryDump", TYPE_BOOL},
 	{"MFT", TYPE_BOOL},
+	{"Secure", TYPE_BOOL},
 	{"UsnJrnl", TYPE_BOOL},
 	{"EventLog", TYPE_BOOL},
 	{"Prefetch", TYPE_BOOL},
 	{"Registry", TYPE_BOOL},
+	{"WMI", TYPE_BOOL},
+	{"SRUM", TYPE_BOOL },
+	{"Web", TYPE_BOOL },
 	{"Output", TYPE_STRING},
-	{"Web", TYPE_BOOL},
+	{"Target", TYPE_STRING},
+	{"MemoryDumpCmdline", TYPE_STRING},
 	{"host", TYPE_STRING},
 	{"port", TYPE_INT},
 	{"path", TYPE_STRING}

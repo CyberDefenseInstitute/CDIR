@@ -5,12 +5,22 @@
 cdir-collector is a collection tool for first response. it collects the following data on Windows.
 
 * RAM
-* MFT
-* UsnJrnl
+* NTFS
+  * $MFT
+  * $SECURE:$SDS
+  * $UsnJrnl:$J
 * Prefetch
 * EventLog
 * Registry
-* Web(History, Cookie)
+  * Amcache.hve
+  * SAM, SECURITY, SOFTWARE, SYSTEM
+  * NTUser.dat, UsrClass.dat
+* WMI
+* SRUM
+* Web
+  * Default_History (Chrome)
+  * default_cookies.sqlite, default_places.sqlite (Firefox)
+  * WebCacheV01.dat (IE, Edge)
 
 ## Download
 
@@ -20,7 +30,7 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 
 ## Build
 
-If you want to customise and build binary from source code, try to use Visual Studio 2015. 
+If you want to customise and build binary from source code, try to use Visual Studio 2017. 
 
 Component of cdir-collector: 
 * cdir.ini
