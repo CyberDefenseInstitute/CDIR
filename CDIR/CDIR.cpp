@@ -90,7 +90,7 @@ ConfigParser *config;
 int launchprocess(char *cmdline, DWORD *status) {
 	PROCESS_INFORMATION pi = {};
 	STARTUPINFO si = {};
-
+	
 	if (cmdline == NULL) {
 		return -1;
 	}
@@ -677,7 +677,106 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 			sprintf(srcpath, "%s\\winevt\\Logs\\%s", sysdir, file.first.c_str());
 			sprintf(dstpath, "Evtx\\%s", file.first.c_str());
 			if (StealthGetFile(srcpath, dstpath, osslog, false)) {
-				cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+				if (!WriteWrapper::isLocal())
+					continue;
+				// If SltealthGetFile failed and isLocal, then tried wevtutil - workaround
+				char cmdline[1024];
+				DWORD status;
+				sprintf(cmdline, "wevtutil epl \"%s\" \"%s\" /lf", srcpath, dstpath); 
+				if (launchprocess(cmdline, &status))
+					cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+				else { // hashing & logging
+					if (!osslog)
+						continue;
+					FILE *stream;
+					BYTE *buf = (BYTE*)malloc(sizeof(BYTE)*CHUNKSIZE);
+
+					if (buf == NULL) {
+						_perror("malloc");
+						return -1;
+					}
+
+					SHA256_CTX sha256;
+					SHA_CTX sha1;
+					MD5_CTX md5;
+
+					if (!(SHA256_Init(&sha256) && SHA1_Init(&sha1) && MD5_Init(&md5))) {
+						fprintf(stderr, "failed to initialize hash context.\n");
+						return -1;
+					}
+
+					if (fopen_s(&stream, dstpath, "rb") == 0) {
+						while(fread(buf, 1, CHUNKSIZE, stream) == CHUNKSIZE) {							
+							if (!(SHA256_Update(&sha256, buf, CHUNKSIZE)
+								&& SHA1_Update(&sha1, buf, CHUNKSIZE)
+								&& MD5_Update(&md5, buf, CHUNKSIZE))) {
+								fprintf(stderr, "failed to update hash context.\n");
+								return -1;
+							}
+						}
+						int remain_bytes = size_t(get_filesize(dstpath)) % CHUNKSIZE;
+						if (remain_bytes > 0) {
+							fread(buf, 1, remain_bytes, stream);
+							if (!(SHA256_Update(&sha256, buf, remain_bytes)
+								&& SHA1_Update(&sha1, buf, remain_bytes)
+								&& MD5_Update(&md5, buf, remain_bytes))) {
+								fprintf(stderr, "failed to update hash context.\n");
+								return -1;
+							}
+						}
+						free(buf);
+						fclose(stream);
+					} else {
+						fprintf(stderr, "failed to open file.\n");
+						return -1;
+					}
+
+					if (WriteWrapper::isLocal()) {
+						if (CopyFileTime(srcpath, dstpath)) {
+							fprintf(stderr, "failed to copy filetime: %s\n", srcpath);
+						}
+					}
+
+					WIN32_FILE_ATTRIBUTE_DATA w32ad;
+					FILETIME ft_c, ft_a, ft_w;
+					SYSTEMTIME st_c, st_a, st_w;
+					char str_c[32], str_a[32], str_w[32];
+
+					if (!GetFileAttributesEx(srcpath, GetFileExInfoStandard, &w32ad)) {
+						_perror("GetFileAttributesEx");
+					}
+					else {
+						ft_c = w32ad.ftCreationTime;
+						ft_a = w32ad.ftLastAccessTime;
+						ft_w = w32ad.ftLastWriteTime;
+
+						FileTimeToSystemTime(&ft_c, &st_c);
+						FileTimeToSystemTime(&ft_a, &st_a);
+						FileTimeToSystemTime(&ft_w, &st_w);
+
+						sprintf(str_c, "%d/%02d/%02d %02d:%02d:%02d", st_c.wYear, st_c.wMonth, st_c.wDay, st_c.wHour, st_c.wMinute, st_c.wSecond);
+						sprintf(str_a, "%d/%02d/%02d %02d:%02d:%02d", st_a.wYear, st_a.wMonth, st_a.wDay, st_a.wHour, st_a.wMinute, st_a.wSecond);
+						sprintf(str_w, "%d/%02d/%02d %02d:%02d:%02d", st_w.wYear, st_w.wMonth, st_w.wDay, st_w.wHour, st_w.wMinute, st_w.wSecond);
+
+						*osslog << str_c << string(22 - string(str_c).size(), ' ');
+						*osslog << str_a << string(22 - string(str_a).size(), ' ');
+						*osslog << str_w << string(22 - string(str_w).size(), ' ');
+					}
+					unsigned char md5hash[MD5_DIGEST_LENGTH];
+					unsigned char sha1hash[SHA_DIGEST_LENGTH];
+					unsigned char sha256hash[SHA256_DIGEST_LENGTH];
+
+					if (!(SHA256_Final(sha256hash, &sha256) && SHA1_Final(sha1hash, &sha1) && MD5_Final(md5hash, &md5))) {
+						fprintf(stderr, "failed to finalize hash context.\n");
+						return -1;
+					}
+
+					*osslog << hexdump(md5hash, MD5_DIGEST_LENGTH) << "   ";
+					*osslog << hexdump(sha1hash, SHA_DIGEST_LENGTH) << "   ";
+					*osslog << hexdump(sha256hash, SHA256_DIGEST_LENGTH) << "   ";
+					*osslog << srcpath << " (wevtutil)";
+					*osslog << "\r\n";
+				}
 			}
 		}
 		cerr << msg("イベントログ 取得完了", "event log is saved") << endl;
@@ -928,7 +1027,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.3.1 - 初動対応用データ収集ツール", "CDIR Collector v1.3.1 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.2 - 初動対応用データ収集ツール", "CDIR Collector v1.3.2 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir

@@ -1,4 +1,4 @@
-# cdir-collector
+﻿# cdir-collector (CDIR-C)
 
 [English](README_en.md)
 
