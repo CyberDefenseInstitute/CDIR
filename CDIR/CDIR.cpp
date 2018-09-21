@@ -80,7 +80,7 @@ param_srumdump = true;
 
 string param_output;
 
-char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], curdir[MAX_PATH + 1], exedir[MAX_PATH + 1], outdir[MAX_PATH + 1];
+char osvolume[3], usrvolume[3], sysdir[MAX_PATH + 1], sysdir_old[MAX_PATH + 1], usrdir[MAX_PATH + 1], windir[MAX_PATH + 1], windir_old[MAX_PATH + 1], backupdir[MAX_PATH + 1], curdir[MAX_PATH + 1], exedir[MAX_PATH + 1], outdir[MAX_PATH + 1];
 
 HMODULE hNTFSParserdll;
 
@@ -535,6 +535,201 @@ int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
 	return 0;
 }
 
+int get_analysisdata_evtx(char *sysdir, char *dstdir, ostringstream *osslog = NULL) {
+	char findpath[MAX_PATH + 1];
+	char srcpath[MAX_PATH + 1];
+	char dstpath[MAX_PATH + 1];
+
+	sprintf(findpath, "%s\\winevt\\Logs\\*.evtx", sysdir);
+	auto files = findfiles(string(findpath));
+
+	for (auto file : files) {
+		//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
+		//if (size == 69632)
+		//	continue;
+		sprintf(srcpath, "%s\\winevt\\Logs\\%s", sysdir, file.first.c_str());
+		sprintf(dstpath, "%s\\%s", dstdir, file.first.c_str());
+		if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+			if (!WriteWrapper::isLocal())
+				continue;
+			// If SltealthGetFile failed and isLocal, then tried wevtutil - workaround
+			char cmdline[1024];
+			DWORD status;
+			sprintf(cmdline, "wevtutil epl \"%s\" \"%s\" /lf", srcpath, dstpath);
+			if (launchprocess(cmdline, &status))
+				cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+			else { // hashing & logging
+				if (!osslog)
+					continue;
+				FILE *stream;
+				BYTE *buf = (BYTE*)malloc(sizeof(BYTE)*CHUNKSIZE);
+
+				if (buf == NULL) {
+					_perror("malloc");
+					return -1;
+				}
+
+				SHA256_CTX sha256;
+				SHA_CTX sha1;
+				MD5_CTX md5;
+
+				if (!(SHA256_Init(&sha256) && SHA1_Init(&sha1) && MD5_Init(&md5))) {
+					fprintf(stderr, "failed to initialize hash context.\n");
+					return -1;
+				}
+
+				if (fopen_s(&stream, dstpath, "rb") == 0) {
+					while (fread(buf, 1, CHUNKSIZE, stream) == CHUNKSIZE) {
+						if (!(SHA256_Update(&sha256, buf, CHUNKSIZE)
+							&& SHA1_Update(&sha1, buf, CHUNKSIZE)
+							&& MD5_Update(&md5, buf, CHUNKSIZE))) {
+							fprintf(stderr, "failed to update hash context.\n");
+							return -1;
+						}
+					}
+					int remain_bytes = size_t(get_filesize(dstpath)) % CHUNKSIZE;
+					if (remain_bytes > 0) {
+						fread(buf, 1, remain_bytes, stream);
+						if (!(SHA256_Update(&sha256, buf, remain_bytes)
+							&& SHA1_Update(&sha1, buf, remain_bytes)
+							&& MD5_Update(&md5, buf, remain_bytes))) {
+							fprintf(stderr, "failed to update hash context.\n");
+							return -1;
+						}
+					}
+					free(buf);
+					fclose(stream);
+				}
+				else {
+					fprintf(stderr, "failed to open file.\n");
+					return -1;
+				}
+
+				if (WriteWrapper::isLocal()) {
+					if (CopyFileTime(srcpath, dstpath)) {
+						fprintf(stderr, "failed to copy filetime: %s\n", srcpath);
+					}
+				}
+
+				WIN32_FILE_ATTRIBUTE_DATA w32ad;
+				FILETIME ft_c, ft_a, ft_w;
+				SYSTEMTIME st_c, st_a, st_w;
+				char str_c[32], str_a[32], str_w[32];
+
+				if (!GetFileAttributesEx(srcpath, GetFileExInfoStandard, &w32ad)) {
+					_perror("GetFileAttributesEx");
+				}
+				else {
+					ft_c = w32ad.ftCreationTime;
+					ft_a = w32ad.ftLastAccessTime;
+					ft_w = w32ad.ftLastWriteTime;
+
+					FileTimeToSystemTime(&ft_c, &st_c);
+					FileTimeToSystemTime(&ft_a, &st_a);
+					FileTimeToSystemTime(&ft_w, &st_w);
+
+					sprintf(str_c, "%d/%02d/%02d %02d:%02d:%02d", st_c.wYear, st_c.wMonth, st_c.wDay, st_c.wHour, st_c.wMinute, st_c.wSecond);
+					sprintf(str_a, "%d/%02d/%02d %02d:%02d:%02d", st_a.wYear, st_a.wMonth, st_a.wDay, st_a.wHour, st_a.wMinute, st_a.wSecond);
+					sprintf(str_w, "%d/%02d/%02d %02d:%02d:%02d", st_w.wYear, st_w.wMonth, st_w.wDay, st_w.wHour, st_w.wMinute, st_w.wSecond);
+
+					*osslog << str_c << string(22 - string(str_c).size(), ' ');
+					*osslog << str_a << string(22 - string(str_a).size(), ' ');
+					*osslog << str_w << string(22 - string(str_w).size(), ' ');
+				}
+				unsigned char md5hash[MD5_DIGEST_LENGTH];
+				unsigned char sha1hash[SHA_DIGEST_LENGTH];
+				unsigned char sha256hash[SHA256_DIGEST_LENGTH];
+
+				if (!(SHA256_Final(sha256hash, &sha256) && SHA1_Final(sha1hash, &sha1) && MD5_Final(md5hash, &md5))) {
+					fprintf(stderr, "failed to finalize hash context.\n");
+					return -1;
+				}
+
+				*osslog << hexdump(md5hash, MD5_DIGEST_LENGTH) << "   ";
+				*osslog << hexdump(sha1hash, SHA_DIGEST_LENGTH) << "   ";
+				*osslog << hexdump(sha256hash, SHA256_DIGEST_LENGTH) << "   ";
+				*osslog << srcpath << " (wevtutil)";
+				*osslog << "\r\n";
+			}
+		}
+	}
+	cerr << msg("イベントログ 取得完了", "event log is saved") << endl;
+
+	return 0;
+}
+
+int get_analysisdata_web(char *userpath, vector<string> users, string outdirbase, ostringstream *osslog = NULL) {
+	for (auto user : users) {
+		// Firefrox
+		{
+			string basepath = string(userpath) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
+			auto profiles = findfiles(basepath + "*", false);
+			char outdir[MAX_PATH + 1];
+			if (!profiles.empty()) {
+				snprintf(outdir, MAX_PATH + 1, "%s", (outdirbase + string("\\Firefox")).c_str());
+				mkdir(outdir, false);
+				for (auto _profile : profiles) {
+					string profile = _profile.first;
+					vector<string> histfiles = {
+						"cookies.sqlite", "cookies.sqlite-shm", "cookies.sqlite-wal",
+						"places.sqlite", "places.sqlite-shm", "places.sqlite-wal"
+					};
+					for (string _histfile : histfiles) {
+						string histfile = basepath + profile + "\\" + _histfile;
+						if (PathFileExists(histfile.c_str())) {
+							string outpath = outdirbase + "\\Firefox\\" + user + "_" + profile + "_" + _histfile;
+							if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
+								cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Chrome
+		{
+			string basepath = string(userpath) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
+			auto profiles = findfiles(basepath + "*", false);
+			char outdir[MAX_PATH + 1];
+			if (!profiles.empty()) {
+				snprintf(outdir, MAX_PATH + 1, "%s", (outdirbase + string("\\Chrome")).c_str());
+				mkdir(outdir, false);
+				for (auto _profile : profiles) {
+					string profile = _profile.first;
+					string histfile = basepath + profile + "\\History";
+					if (PathFileExists(histfile.c_str())) {
+						string outpath = outdirbase + "\\Chrome\\" + user + "_" + profile + "_" + "History";
+						if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
+							cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
+						}
+					}
+				}
+			}
+		}
+
+		// upper IE10/Edge
+		{
+			string basepath = string(userpath) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
+			auto files = findfiles(basepath + "*", false);
+			char outdir[MAX_PATH + 1];
+			if (!files.empty()) {
+				snprintf(outdir, MAX_PATH + 1, "%s", (outdirbase + string("\\IE10_Edge")).c_str());
+				mkdir(outdir, false);
+				for (auto file : files) {
+					string histfile = basepath + file.first;
+					string outpath = outdirbase + "\\IE10_Edge\\" + user + "_" + file.first;
+					if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
+						cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
+					}
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 int get_analysisdata(ostringstream *osslog = NULL) {
 	// collect somefiles
 
@@ -667,119 +862,16 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		// get event logs		
 		mkdir("Evtx");
 
-		sprintf(findpath, "%s\\winevt\\Logs\\*.evtx", sysdir);
-		auto files = findfiles(string(findpath));
+		get_analysisdata_evtx(sysdir, "Evtx", osslog);
 
-		for (auto file : files) {
-			//uint64_t size = w32fd.nFileSizeHigh * ((uint64_t)MAXDWORD + 1) + w32fd.nFileSizeLow;
-			//if (size == 69632)
-			//	continue;
-			sprintf(srcpath, "%s\\winevt\\Logs\\%s", sysdir, file.first.c_str());
-			sprintf(dstpath, "Evtx\\%s", file.first.c_str());
-			if (StealthGetFile(srcpath, dstpath, osslog, false)) {
-				if (!WriteWrapper::isLocal())
-					continue;
-				// If SltealthGetFile failed and isLocal, then tried wevtutil - workaround
-				char cmdline[1024];
-				DWORD status;
-				sprintf(cmdline, "wevtutil epl \"%s\" \"%s\" /lf", srcpath, dstpath); 
-				if (launchprocess(cmdline, &status))
-					cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
-				else { // hashing & logging
-					if (!osslog)
-						continue;
-					FILE *stream;
-					BYTE *buf = (BYTE*)malloc(sizeof(BYTE)*CHUNKSIZE);
-
-					if (buf == NULL) {
-						_perror("malloc");
-						return -1;
-					}
-
-					SHA256_CTX sha256;
-					SHA_CTX sha1;
-					MD5_CTX md5;
-
-					if (!(SHA256_Init(&sha256) && SHA1_Init(&sha1) && MD5_Init(&md5))) {
-						fprintf(stderr, "failed to initialize hash context.\n");
-						return -1;
-					}
-
-					if (fopen_s(&stream, dstpath, "rb") == 0) {
-						while(fread(buf, 1, CHUNKSIZE, stream) == CHUNKSIZE) {							
-							if (!(SHA256_Update(&sha256, buf, CHUNKSIZE)
-								&& SHA1_Update(&sha1, buf, CHUNKSIZE)
-								&& MD5_Update(&md5, buf, CHUNKSIZE))) {
-								fprintf(stderr, "failed to update hash context.\n");
-								return -1;
-							}
-						}
-						int remain_bytes = size_t(get_filesize(dstpath)) % CHUNKSIZE;
-						if (remain_bytes > 0) {
-							fread(buf, 1, remain_bytes, stream);
-							if (!(SHA256_Update(&sha256, buf, remain_bytes)
-								&& SHA1_Update(&sha1, buf, remain_bytes)
-								&& MD5_Update(&md5, buf, remain_bytes))) {
-								fprintf(stderr, "failed to update hash context.\n");
-								return -1;
-							}
-						}
-						free(buf);
-						fclose(stream);
-					} else {
-						fprintf(stderr, "failed to open file.\n");
-						return -1;
-					}
-
-					if (WriteWrapper::isLocal()) {
-						if (CopyFileTime(srcpath, dstpath)) {
-							fprintf(stderr, "failed to copy filetime: %s\n", srcpath);
-						}
-					}
-
-					WIN32_FILE_ATTRIBUTE_DATA w32ad;
-					FILETIME ft_c, ft_a, ft_w;
-					SYSTEMTIME st_c, st_a, st_w;
-					char str_c[32], str_a[32], str_w[32];
-
-					if (!GetFileAttributesEx(srcpath, GetFileExInfoStandard, &w32ad)) {
-						_perror("GetFileAttributesEx");
-					}
-					else {
-						ft_c = w32ad.ftCreationTime;
-						ft_a = w32ad.ftLastAccessTime;
-						ft_w = w32ad.ftLastWriteTime;
-
-						FileTimeToSystemTime(&ft_c, &st_c);
-						FileTimeToSystemTime(&ft_a, &st_a);
-						FileTimeToSystemTime(&ft_w, &st_w);
-
-						sprintf(str_c, "%d/%02d/%02d %02d:%02d:%02d", st_c.wYear, st_c.wMonth, st_c.wDay, st_c.wHour, st_c.wMinute, st_c.wSecond);
-						sprintf(str_a, "%d/%02d/%02d %02d:%02d:%02d", st_a.wYear, st_a.wMonth, st_a.wDay, st_a.wHour, st_a.wMinute, st_a.wSecond);
-						sprintf(str_w, "%d/%02d/%02d %02d:%02d:%02d", st_w.wYear, st_w.wMonth, st_w.wDay, st_w.wHour, st_w.wMinute, st_w.wSecond);
-
-						*osslog << str_c << string(22 - string(str_c).size(), ' ');
-						*osslog << str_a << string(22 - string(str_a).size(), ' ');
-						*osslog << str_w << string(22 - string(str_w).size(), ' ');
-					}
-					unsigned char md5hash[MD5_DIGEST_LENGTH];
-					unsigned char sha1hash[SHA_DIGEST_LENGTH];
-					unsigned char sha256hash[SHA256_DIGEST_LENGTH];
-
-					if (!(SHA256_Final(sha256hash, &sha256) && SHA1_Final(sha1hash, &sha1) && MD5_Final(md5hash, &md5))) {
-						fprintf(stderr, "failed to finalize hash context.\n");
-						return -1;
-					}
-
-					*osslog << hexdump(md5hash, MD5_DIGEST_LENGTH) << "   ";
-					*osslog << hexdump(sha1hash, SHA_DIGEST_LENGTH) << "   ";
-					*osslog << hexdump(sha256hash, SHA256_DIGEST_LENGTH) << "   ";
-					*osslog << srcpath << " (wevtutil)";
-					*osslog << "\r\n";
-				}
-			}
+		// Windows.old
+		if (PathIsDirectory(backupdir)) {
+			mkdir("Evtx_old");
+			if (get_analysisdata_evtx(sysdir_old, "Evtx_old", osslog) == -1)
+				return -1;
 		}
-		cerr << msg("イベントログ 取得完了", "event log is saved") << endl;
+
+		cerr << msg("イベントログ 取得完了", "event log is saved") << endl; */
 	}
 	
 	if (param_prefdump == true) {
@@ -805,6 +897,32 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		}
 		else {
 			cerr << msg("プリフェッチ 無し", "no prefetch found") << endl;
+		}
+
+		// Windows.old
+		if (PathIsDirectory(backupdir)) {
+			mkdir("Prefetch_old");
+
+			sprintf(findpath, "%s\\Prefetch\\*.pf", windir_old);
+			auto files = findfiles(string(findpath));
+
+			bool flag = false;
+			for (auto file : files) {
+				sprintf(srcpath, "%s\\Prefetch\\%s", windir_old, file.first.c_str());
+				sprintf(dstpath, "Prefetch_old\\%s", file.first.c_str());
+				if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+					cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+				}
+				else {
+					flag = true;
+				}
+			}
+			if (flag) {
+				cerr << msg("プリフェッチ 取得完了(Windows.old)", "prefetch is saved (Windows.old)") << endl;
+			}
+			else {
+				cerr << msg("プリフェッチ 無し(Windows.old)", "no prefetch found (Windows.old)") << endl;
+			}
 		}
 	}
 
@@ -875,6 +993,44 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 			}
 		}
 		cerr << msg("レジストリ 取得完了", "registry is saved") << endl;
+
+		// Windows.old
+		if (PathIsDirectory(backupdir)) {
+			paths_pair.erase(paths_pair.begin(), paths_pair.end());
+			for (size_t i = 0; i < paths.size(); i++) {
+				paths_pair.push_back(pair<string, string>(string(sysdir_old) + paths[i], "Registry_old\\" + basename(paths[i])));
+			}
+
+			// Amcache.hve
+			paths_pair.push_back(pair<string, string>(string(windir_old) + "\\AppCompat\\Programs\\Amcache.hve", "Registry_old\\Amcache.hve"));
+			paths_pair.push_back(pair<string, string>(string(windir_old) + "\\AppCompat\\Programs\\Amcache.hve.LOG1", "Registry_old\\Amcache.hve.LOG1"));
+			paths_pair.push_back(pair<string, string>(string(windir_old) + "\\AppCompat\\Programs\\Amcache.hve.LOG2", "Registry_old\\Amcache.hve.LOG2"));
+
+			for (size_t i = 0; i < users.size(); i++) {
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\NTUSER.dat", "Registry_old\\" + users[i] + "_NTUSER.dat"));
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\NTUSER.dat.LOG1", "Registry_old\\" + users[i] + "_NTUSER.dat.LOG1"));
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\NTUSER.dat.LOG2", "Registry_old\\" + users[i] + "_NTUSER.dat.LOG2"));
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat", "Registry_old\\" + users[i] + "_UsrClass.dat"));
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG1", "Registry_old\\" + users[i] + "_UsrClass.dat.LOG1"));
+				paths_pair.push_back(pair<string, string>(string(backupdir) + "\\Users\\" + users[i] + "\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat.LOG2", "Registry_old\\" + users[i] + "_UsrClass.dat.LOG2"));
+			}
+
+			mkdir("Registry_old");
+
+			for (size_t i = 0; i < paths_pair.size(); i++) {
+				char *srcpath, *dstpath;
+				srcpath = strdup(paths_pair[i].first.c_str());
+				dstpath = strdup(paths_pair[i].second.c_str());
+
+				if (filecheck(srcpath)) {
+					continue;
+				}
+				if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+					cerr << msg("取得失敗(Windows.old)", "failed to save (Windows.old)") << ": " << srcpath << endl;
+				}
+			}
+		}
+		cerr << msg("レジストリ 取得完了(Windows.old)", "registry is saved (Windows.old)") << endl;
 	}
 
 	if (param_wmidump == true) {
@@ -893,6 +1049,20 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		}
 		cerr << msg("WMI 取得完了", "wmi data is saved") << endl;
 
+		// Windows.old
+		mkdir("WMI_old");
+
+		basepath = string(sysdir_old) + "\\wbem\\Repository\\";
+		files = findfiles(basepath + "*", false);
+
+		for (auto file : files) {
+			string srcpath = basepath + file.first;
+			string dstpath = "WMI_old\\" + file.first;
+			if (StealthGetFile((char*)srcpath.c_str(), (char*)dstpath.c_str(), osslog, false)) {
+				cerr << msg("取得失敗(Windows.old)", "failed to save (Windows.old)") << ": " << srcpath << endl;
+			}
+		}
+		cerr << msg("WMI 取得完了(Windows.old)", "wmi data is saved (Windows.old)") << endl;
 	}
 
 	if (param_srumdump == true) {
@@ -920,75 +1090,43 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 			cerr << msg("SRUM 無し", "no srum found") << endl;
 		}
 
+		// Windows.old
+		mkdir("SRUM_old");
+
+		basepath = string(sysdir_old) + "\\sru\\";
+		files = findfiles(basepath + "*", false);
+
+		flag = false;
+		for (auto file : files) {
+			string srcpath = basepath + file.first;
+			string dstpath = "SRUM\\" + file.first;
+			if (StealthGetFile((char*)srcpath.c_str(), (char*)dstpath.c_str(), osslog, false)) {
+				cerr << msg("取得失敗(Windows.old)", "failed to save (Windows.old)") << ": " << srcpath << endl;
+			}
+			else {
+				flag = true;
+			}
+		}
+		if (flag) {
+			cerr << msg("SRUM 取得完了(Windows.old)", "srum is saved (Windows.old)") << endl;
+		}
+		else {
+			cerr << msg("SRUM 無し(Windows.old)", "no srum found (Windows.old)") << endl;
+		}
 	}
 
 	if (param_webdump == true) {
 		// get webbrowser data
 		mkdir("Web");
 
-		for (auto user: users) {
-			// Firefrox
-			{
-				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\";
-				auto profiles = findfiles(basepath + "*", false);
-				if (!profiles.empty()) {
-					mkdir("Web\\Firefox", false);
-					for (auto _profile : profiles) {
-						string profile = _profile.first;
-						vector<string> histfiles = {
-							"cookies.sqlite", "cookies.sqlite-shm", "cookies.sqlite-wal",
-							"places.sqlite", "places.sqlite-shm", "places.sqlite-wal"
-						};
-						for (string _histfile : histfiles) {
-							string histfile = basepath + profile + "\\" + _histfile;
-							if (PathFileExists(histfile.c_str())) {
-								string outpath = "Web\\Firefox\\" + user + "_" + profile + "_" + _histfile;
-								if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
-									cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Chrome
-			{
-				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Google\\Chrome\\User Data\\";
-				auto profiles = findfiles(basepath + "*", false);
-				if (!profiles.empty()) {
-					mkdir("Web\\Chrome", false);
-					for (auto _profile : profiles) {
-						string profile = _profile.first;
-						string histfile = basepath + profile + "\\History";
-						if (PathFileExists(histfile.c_str())) {
-							string outpath = "Web\\Chrome\\" + user + "_" + profile + "_" + "History";
-							if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
-								cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
-							}
-						}
-					}
-				}
-			}
-
-			// upper IE10/Edge
-			{
-				string basepath = string(usrvolume) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
-				auto files = findfiles(basepath + "*", false);
-				if (!files.empty()) {
-					mkdir("Web\\IE10_Edge", false);
-					for (auto file : files) {
-						string histfile = basepath + file.first;
-						string outpath = "Web\\IE10_Edge\\" + user + "_" + file.first;
-						if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
-							cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
-						}
-					}
-				}
-			}
-		}
-
+		get_analysisdata_web(usrvolume, users, string("Web"), osslog);
 		cerr << msg("インターネット(Web) 取得完了", "internet artifact data is saved") << endl;
+
+		if (backupdir) {
+			mkdir("Web_old");
+			get_analysisdata_web(backupdir, users, string("Web_old"), osslog);
+			cerr << msg("インターネット(Web) 取得完了(Windows.old)", "internet artifact data is saved (Windows.old)") << endl;
+		}
 	}
 
 	return 0;
@@ -1123,6 +1261,16 @@ int main(int argc, char **argv)
 		cerr << msg("[エラー] Windowsディレクトリ",
 			        "[ERROR] failed to get windows directory") << endl;
 		__exit(EXIT_FAILURE);
+	}
+	else {
+		strncpy(backupdir, windir, MAX_PATH + 1);
+		strncat(backupdir, ".old", MAX_PATH + 1);
+
+		strncpy(windir_old, backupdir, MAX_PATH + 1);
+		strncat(windir_old, "\\Windows", MAX_PATH + 1);
+
+		strncpy(sysdir_old, windir_old, MAX_PATH + 1);
+		strncat(sysdir_old, "\\system32", MAX_PATH + 1);
 	}
 	dwsize = MAX_PATH;
 	if (!GetProfilesDirectory(usrdir, &dwsize)) {
