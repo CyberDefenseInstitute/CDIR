@@ -1,4 +1,4 @@
-﻿# cdir-collector (CDIR-C)
+﻿# cdir-collector
 
 [English](README_en.md)
 
@@ -21,6 +21,7 @@ cdir-collectorは初動対応時のデータ保全を支援するためのツー
   * Default_History (Chrome)
   * default_cookies.sqlite, default_places.sqlite (Firefox)
   * WebCacheV01.dat (IE, Edge)
+* Windows.old フォルダ内の上記データ (フォルダが存在する場合) 
 
 ## ダウンロード
 
@@ -35,9 +36,10 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 * cdir.ini
 * cdir-collector.exe
 * NTFSParserDLL.dll
-* libcrypto-38.dll
-* libssl-39.dll
+* libcrypto-41.dll
+* libssl-43.dll
 * winpmem.exe
+* winpmem-2.1.post4.exe
 
 ## 使い方
 
@@ -52,4 +54,5 @@ cdir-collectorは以下のライブラリ、ツールを活用しています。
 * ライブラリ: NTFSParserDLL, LibreSSL
 * ツール: winpmem
 
-winpmem.exeはrekallプロジェクト (https://github.com/google/rekall) で提供されているWindows用のメモリ保全プログラムです。
+winpmem.exeはc-aff4プロジェクト (https://github.com/Velocidex/c-aff4) で提供されているWindows用のメモリ保全プログラムです。
+winpmem-2.1.post4.exeはwinpmem.exeの過去バージョンでrekallプロジェクト (https://github.com/google/rekall) で提供されているプログラムです。

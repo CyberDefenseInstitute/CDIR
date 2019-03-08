@@ -1,4 +1,4 @@
-# cdir-collector (CDIR-C)
+# cdir-collector
 
 [Japanese](README.md)
 
@@ -21,6 +21,7 @@ cdir-collector is a collection tool for first response. it collects the followin
   * Default_History (Chrome)
   * default_cookies.sqlite, default_places.sqlite (Firefox)
   * WebCacheV01.dat (IE, Edge)
+* Windows.old (if this folder exists)
 
 ## Download
 
@@ -36,9 +37,10 @@ Component of cdir-collector:
 * cdir.ini
 * cdir-collector.exe
 * NTFSParserDLL.dll
-* libcrypto-38.dll
-* libssl-39.dll
+* libcrypto-41.dll
+* libssl-43.dll
 * winpmem.exe
+* winpmem-2.1.post4.exe
 
 ## How to use
 
@@ -54,4 +56,5 @@ cdir-collector depends on the following library/tools.
 * Library: NTFSParserDLL, LibreSSL
 * Tool: winpmem
 
-winpmem.exe is a part of rekall project(https://github.com/google/rekall).
+winpmem.exe is a part of c-aff4 project (https://github.com/Velocidex/c-aff4). 
+winpmem-2.1.post4.exe is a part of rekall project (https://github.com/google/rekall).

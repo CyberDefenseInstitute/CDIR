@@ -66,18 +66,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="libressl-2.4.1-windows\x86\libssl-39.dll">
-      <Filter>リソース ファイル</Filter>
-    </None>
-    <None Include="libressl-2.4.1-windows\x86\libcrypto-38.dll">
-      <Filter>リソース ファイル</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="libressl-2.4.1-windows\x86\libcrypto-38.lib">
+    <Library Include="libressl-2.5.5-windows\x86\libcrypto-41.lib">
       <Filter>リソース ファイル</Filter>
     </Library>
-    <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib">
+    <Library Include="libressl-2.5.5-windows\x86\libssl-43.lib">
       <Filter>リソース ファイル</Filter>
     </Library>
   </ItemGroup>

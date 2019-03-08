@@ -23,13 +23,13 @@
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>CDIR</RootNamespace>
     <ProjectName>cdir-collector</ProjectName>
-    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v140_xp</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
     <UseOfMfc>Static</UseOfMfc>
   </PropertyGroup>
@@ -130,7 +130,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);libressl-2.4.1-windows\include;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);libressl-2.5.5-windows\include</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <ForcedIncludeFiles>stdafx.h</ForcedIncludeFiles>
@@ -147,7 +147,7 @@
       </DelayLoadDLLs>
     </Link>
     <PostBuildEvent>
-      <Command>copy $(ProjectDir)libressl-2.4.1-windows\x86\libcrypto-38.dll $(OutDir) &amp; copy $(ProjectDir)libressl-2.4.1-windows\x86\libssl-39.dll $(OutDir) &amp; copy $(ProjectDir)winpmem.exe $(OutDir) &amp; copy $(ProjectDir)cdir.ini $(OutDir)</Command>
+      <Command>copy $(ProjectDir)libressl-2.5.5-windows\x86\libcrypto-41.dll $(OutDir) &amp; copy $(ProjectDir)libressl-2.5.5-windows\x86\libssl-43.dll $(OutDir) &amp; copy $(ProjectDir)winpmem*.exe $(OutDir) &amp; copy $(ProjectDir)cdir.ini $(OutDir)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -200,16 +200,8 @@
     <ResourceCompile Include="CDIR.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="libressl-2.4.1-windows\x86\libcrypto-38.dll">
-      <FileType>Document</FileType>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</DeploymentContent>
-      <DeploymentContent>false</DeploymentContent>
-    </None>
-    <None Include="libressl-2.4.1-windows\x86\libssl-39.dll" />
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="libressl-2.4.1-windows\x86\libcrypto-38.lib" />
-    <Library Include="libressl-2.4.1-windows\x86\libssl-39.lib" />
+    <Library Include="libressl-2.5.5-windows\x86\libcrypto-41.lib" />
+    <Library Include="libressl-2.5.5-windows\x86\libssl-43.lib" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="collector.ico" />
