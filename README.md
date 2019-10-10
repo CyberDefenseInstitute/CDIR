@@ -31,7 +31,7 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 
 ## ビルド
 
-ソースコードはVisual Studio 2017で読み込みビルドすることができます。cdir-collectorの構成ファイルは以下の通りです。
+ソースコードはVisual Studio 2019で読み込みビルドすることができます。cdir-collectorの構成ファイルは以下の通りです。
 
 * cdir.ini
 * cdir-collector.exe

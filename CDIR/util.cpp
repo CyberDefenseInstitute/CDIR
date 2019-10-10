@@ -143,3 +143,37 @@ vector<pair<string, int>> findfiles(string filepath, bool error) {
 
 	return paths;
 }
+
+vector<pair<string, int>> findstreams(const char* cfilepath, bool error) {
+
+	vector<pair<string, int>> paths;
+	WIN32_FIND_STREAM_DATA streamData;
+	HANDLE hfind;
+
+
+	size_t ret;
+	wchar_t wfilepath[MAX_PATH + 1];
+
+	mbstowcs_s(&ret, wfilepath, size_t(MAX_PATH + 1), cfilepath, _TRUNCATE);
+	hfind = FindFirstStreamW(wfilepath, FindStreamInfoStandard, &streamData, 0);
+
+	if (hfind != INVALID_HANDLE_VALUE) {
+		do {
+			char ads[ MAX_PATH + 1 ];
+			//WideCharToMultiByte(CP_ACP, 0, streamData.cStreamName, -1, mtxt, MAX_PATH, NULL, NULL);
+			wcstombs_s(&ret, ads, size_t(MAX_PATH + 1), streamData.cStreamName, _TRUNCATE);
+
+			if ( strcmp( ads, "::$DATA" ) != 0) {
+				// trim last ":$DATA"
+				string ads_str = string(ads).substr(0, string(ads).length() - 6);
+				paths.push_back(pair<string, int>( ads_str, 0 ) );
+			}
+		} while (FindNextStreamW(hfind, &streamData));
+		if (!FindClose(hfind)) {
+			_perror("FindClose");
+		}
+
+	}
+
+	return paths;
+}

@@ -749,11 +749,15 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	Wow64DisableWow64FsRedirection(&oldval);
 
 	char findpath[MAX_PATH + 1];
+	char filepath[MAX_PATH + 1];
 	char srcpath[MAX_PATH + 1];
 	char dstpath[MAX_PATH + 1];
 
-	if (param_mftdump == true) {
+	if (param_mftdump || param_securedump || param_usndump) {
 		mkdir("NTFS");
+	}
+
+	if (param_mftdump == true) {
 		// get MFT
 		sprintf(srcpath, "%s\\$MFT", osvolume);
 		sprintf(dstpath, "NTFS\\%c_$MFT", osvolume[0]);
@@ -867,20 +871,38 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 		// get prefetch files
 		mkdir("Prefetch");
 
-		sprintf(findpath, "%s\\Prefetch\\*.pf", windir);
+		sprintf(findpath, "%s\\Prefetch\\*", windir);
 		auto files = findfiles(string(findpath));
-
 		bool flag = false;
 		for (auto file : files) {
-			sprintf(srcpath, "%s\\Prefetch\\%s", windir, file.first.c_str());
-			sprintf(dstpath, "Prefetch\\%s", file.first.c_str());
-			if (StealthGetFile(srcpath, dstpath, osslog, false)) {
-				cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+			if ( file.first.substr(file.first.length() - 3) == ".pf" ) {
+				sprintf(srcpath, "%s\\Prefetch\\%s", windir, file.first.c_str());
+				sprintf(dstpath, "Prefetch\\%s", file.first.c_str());
+				if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+					cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+				}
+				else {
+					flag = true;
+				}
 			}
-			else {
-				flag = true;
+			// check if the file has ADS or not
+			sprintf(filepath, "%s\\Prefetch\\%s", windir, file.first.c_str());
+			auto strms = findstreams(filepath);
+			if ( strms.size() > 0 ){
+				for (auto strm : strms) {
+					sprintf(srcpath, "%s\\Prefetch\\%s%s", windir, file.first.c_str(), strm.first.c_str());
+					sprintf(dstpath, "Prefetch\\%s%s", file.first.c_str(), strm.first.c_str());
+					if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+						cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+					}
+					else {
+						flag = true;
+					}
+				}
 			}
+
 		}
+
 		if (flag) {
 			cerr << msg("プリフェッチ 取得完了", "prefetch is saved") << endl;
 		}
@@ -890,20 +912,38 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 
 		// Windows.old
 		if (PathIsDirectory(backupdir)) {
+			
 			mkdir("Prefetch_old");
-
-			sprintf(findpath, "%s\\Prefetch\\*.pf", windir_old);
+			sprintf(findpath, "%s\\Prefetch\\*", windir_old);
 			auto files = findfiles(string(findpath));
 
 			bool flag = false;
+
 			for (auto file : files) {
-				sprintf(srcpath, "%s\\Prefetch\\%s", windir_old, file.first.c_str());
-				sprintf(dstpath, "Prefetch_old\\%s", file.first.c_str());
-				if (StealthGetFile(srcpath, dstpath, osslog, false)) {
-					cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+				if ( file.first.substr(file.first.length() - 3) == ".pf" ) {
+					sprintf(srcpath, "%s\\Prefetch\\%s", windir_old, file.first.c_str());
+					sprintf(dstpath, "Prefetch_old\\%s", file.first.c_str());
+					if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+						cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+					}
+					else {
+						flag = true;
+					}
 				}
-				else {
-					flag = true;
+				// check if the file has ADS or not
+				sprintf(filepath, "%s\\Prefetch\\%s", windir_old, file.first.c_str());
+				auto strms = findstreams(filepath);
+				if (strms.size() > 0) {
+					for (auto strm : strms) {
+						sprintf(srcpath, "%s\\Prefetch\\%s%s", windir_old, file.first.c_str(), strm.first.c_str());
+						sprintf(dstpath, "Prefetch_old\\%s%s", file.first.c_str(), strm.first.c_str());
+						if (StealthGetFile(srcpath, dstpath, osslog, false)) {
+							cerr << msg("取得失敗", "failed to save") << ": " << srcpath << endl;
+						}
+						else {
+							flag = true;
+						}
+					}
 				}
 			}
 			if (flag) {
@@ -1173,7 +1213,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.3.3 - 初動対応用データ収集ツール", "CDIR Collector v1.3.3 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.4 - 初動対応用データ収集ツール", "CDIR Collector v1.3.4 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir
@@ -1299,6 +1339,7 @@ int main(int argc, char **argv)
 		strncpy(usrvolume, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
 		strncpy(sysdir, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
 		strncpy(windir, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
+		strncpy(backupdir, (CASTVAL(string, config->getValue("Target"))).c_str(), 2);
 		cerr << "Target: " << osvolume << endl;
 	}
 

@@ -16,3 +16,4 @@ string msg(string jp, string en, WORD lang = GetUserDefaultLangID());
 string join(vector<string>, string);
 string hexdump(const unsigned char*, size_t);
 vector<pair<string, int>> findfiles(string, bool error=true);
+vector<pair<string, int>> findstreams(const char* cfilepath, bool error = true);
