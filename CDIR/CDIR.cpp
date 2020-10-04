@@ -697,7 +697,7 @@ int get_analysisdata_web(char *userpath, vector<string> users, string outdirbase
 			}
 		}
 
-		// IE >= 10 and Edge
+		// IE >= 10 and old Edge
 		{
 			string basepath = string(userpath) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Windows\\WebCache\\";
 			auto files = findfiles(basepath + "*", false);
@@ -710,6 +710,27 @@ int get_analysisdata_web(char *userpath, vector<string> users, string outdirbase
 					string outpath = outdirbase + "\\IE10_Edge\\" + user + "_" + file.first;
 					if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
 						cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
+					}
+				}
+			}
+		}
+
+		// Edge
+		{
+			string basepath = string(userpath) + "\\Users\\" + user + "\\AppData\\Local\\Microsoft\\Edge\\User Data\\";
+			auto profiles = findfiles(basepath + "*", false);
+			char outdir[MAX_PATH + 1];
+			if (!profiles.empty()) {
+				snprintf(outdir, MAX_PATH + 1, "%s", (outdirbase + string("\\Edge")).c_str());
+				mkdir(outdir, false);
+				for (auto _profile : profiles) {
+					string profile = _profile.first;
+					string histfile = basepath + profile + "\\History";
+					if (PathFileExists(histfile.c_str())) {
+						string outpath = outdirbase + "\\Edge\\" + user + "_" + profile + "_" + "History";
+						if (StealthGetFile((char*)histfile.c_str(), (char*)outpath.c_str(), osslog, false)) {
+							cerr << msg("取得失敗", "failed to save") << ": " << histfile << endl;
+						}
 					}
 				}
 			}
@@ -1213,7 +1234,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.3.4 - 初動対応用データ収集ツール", "CDIR Collector v1.3.4 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.5 - 初動対応用データ収集ツール", "CDIR Collector v1.3.5 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir
