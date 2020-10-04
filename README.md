@@ -18,9 +18,10 @@ cdir-collectorは初動対応時のデータ保全を支援するためのツー
 * WMI
 * SRUM
 * Web
-  * Default_History (Chrome)
-  * default_cookies.sqlite, default_places.sqlite (Firefox)
+  * History (Chrome)
+  * cookies.sqlite, places.sqlite (Firefox)
   * WebCacheV01.dat (IE, Edge)
+  * History (Edge)
 * Windows.old フォルダ内の上記データ (フォルダが存在する場合) 
 
 ## ダウンロード
