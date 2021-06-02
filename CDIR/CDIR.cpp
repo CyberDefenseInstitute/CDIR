@@ -76,7 +76,8 @@ param_prefdump = true,
 param_regdump = true,
 param_webdump = true,
 param_wmidump = true,
-param_srumdump = true;
+param_srumdump = true,
+param_swapdump = true;
 
 string param_output;
 
@@ -744,6 +745,8 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	// collect somefiles
 
 	// order of collection
+	// pagefile.sys
+	// swapfile.sys
 	// $MFT
 	// $SECURE
 	// $UsnJrnl:$J (skip beginning sparse data)
@@ -764,7 +767,6 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	//  * History
 	// * C:\Users\[user]\AppData\Local\Microsoft\Windows\WebCache\
 	// 
-	// pagefile.sys
 
 	PVOID oldval = NULL;
 	Wow64DisableWow64FsRedirection(&oldval);
@@ -773,6 +775,29 @@ int get_analysisdata(ostringstream *osslog = NULL) {
 	char filepath[MAX_PATH + 1];
 	char srcpath[MAX_PATH + 1];
 	char dstpath[MAX_PATH + 1];
+
+	if (param_swapdump == true) {
+
+		sprintf(srcpath, "%s\\pagefile.sys", osvolume);
+		sprintf(dstpath, "pagefile.sys");
+
+		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+			cerr << msg("ページファイル 取得完了 ", "Pagefile was saved ") << srcpath << endl;
+		}
+		else {
+			cerr << msg("ページファイル 取得失敗 ", "failed to save pagefile ") << srcpath << endl;
+		}
+
+		sprintf(srcpath, "%s\\swapfile.sys", osvolume);
+		sprintf(dstpath, "swapfile.sys");
+
+		if (!StealthGetFile(srcpath, dstpath, osslog, false)) {
+			cerr << msg("ページファイル (UWP用) 取得完了 ", "Pagefile for UWP was saved ") << srcpath << endl;
+		}
+		else {
+			cerr << msg("ページファイル (UWP用) 取得失敗 ", "failed to save pagefile for UWP ") << srcpath << endl;
+		}
+	}
 
 	if (param_mftdump || param_securedump || param_usndump) {
 		mkdir("NTFS");
@@ -1271,7 +1296,8 @@ int main(int argc, char **argv)
 			{{"Registry", "レジストリ", "Registry"}, &param_regdump},
 			{{"WMI", "WMI", "WMI"}, &param_wmidump},
 			{{"SRUM", "SRUM", "SRUM" }, &param_srumdump},
-			{{"Web", "ブラウザ", "Web"}, &param_webdump}
+			{{"Web", "ブラウザ", "Web"}, &param_webdump},
+			{{"Swap", "スワップファイル", "Swap"}, &param_swapdump}
 		};
 
 		for (size_t i = 0; i < params.size(); i++) {
