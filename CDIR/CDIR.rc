@@ -62,8 +62,8 @@ IDI_ICON1               ICON                    "collector.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,3,5,0
- PRODUCTVERSION 1,3,5,0
+ FILEVERSION 1,3,6,0
+ PRODUCTVERSION 1,3,6,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -80,12 +80,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Cyber Defense Institute, Inc."
             VALUE "FileDescription", "Data Collection Tool for Incident Response"
-            VALUE "FileVersion", "1.3.5.0"
+            VALUE "FileVersion", "1.3.6.0"
             VALUE "InternalName", "cdir-collector.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2020 Cyber Defense Institute"
+            VALUE "LegalCopyright", "Copyright (C) 2022 Cyber Defense Institute"
             VALUE "OriginalFilename", "cdir-collector.exe"
             VALUE "ProductName", "CDIR Collector"
-            VALUE "ProductVersion", "1.3.5.0"
+            VALUE "ProductVersion", "1.3.6.0"
         END
     END
     BLOCK "VarFileInfo"

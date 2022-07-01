@@ -39,8 +39,8 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 * NTFSParserDLL.dll
 * libcrypto-41.dll
 * libssl-43.dll
-* winpmem.exe
-* winpmem-2.1.post4.exe
+* winpmem_x64.exe
+* winpmem_x86.exe
 
 ## 使い方
 
@@ -55,5 +55,4 @@ cdir-collectorは以下のライブラリ、ツールを活用しています。
 * ライブラリ: NTFSParserDLL, LibreSSL
 * ツール: winpmem
 
-winpmem.exeはc-aff4プロジェクト (https://github.com/Velocidex/c-aff4) で提供されているWindows用のメモリ保全プログラムです。
-winpmem-2.1.post4.exeはwinpmem.exeの過去バージョンでrekallプロジェクト (https://github.com/google/rekall) で提供されているプログラムです。
+winpmem_x64.exe、winpmem_x86.exeはWinPmemプロジェクト (https://github.com/Velocidex/WinPmem) で提供されているWindows用のメモリ保全プログラムです。

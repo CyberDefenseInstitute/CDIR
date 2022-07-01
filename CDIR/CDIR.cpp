@@ -1,5 +1,5 @@
 ﻿/*
- * Copyright(C) 2019 Cyber Defense Institute, Inc.
+ * Copyright(C) 2022 Cyber Defense Institute, Inc.
  *
  * This program/include file is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as published
@@ -580,25 +580,27 @@ int get_pagefilepath(char *ret) {
 int get_memdump(bool is_x64, char *computername, char *pagefilepath) {
 	// winpmem	
 	char tmp[256];
+	char* winpmem_exe_name;
 	DWORD status;
 
 	if (computername == NULL) {
 		fprintf(stderr, "computername is NULL.\n");
 		return -1;
 	}
+	if (is_x64 == true)
+		winpmem_exe_name = "winpmem_x64.exe";
+	else
+		winpmem_exe_name = "winpmem_x86.exe";
+
 	if (config->isSet("MemoryDumpCmdline"))
 		sprintf(tmp, "%s\\%s", exedir, (CASTVAL(string, config->getValue("MemoryDumpCmdline"))).c_str());
 	else
-		sprintf(tmp, "%s\\winpmem.exe -dd --output RAM_%s.aff4 -t", exedir, computername);
-
+		sprintf(tmp, "%s\\%s RAM_%s.raw", exedir, winpmem_exe_name, computername);
+	
 	if (launchprocess(tmp, &status)) {
 		return -1;
 	}
-
-	// for pagefile.sys acquisition
-	//	sprintf(tmp, "..\\winpmem.exe -dd -p %s -o RAM_%s.aff4 -t", pagefilepath + 4, computername);
-	//	launchprocess(tmp);
-
+	
 	return 0;
 }
 
@@ -1216,6 +1218,7 @@ int main(int argc, char **argv)
 	uint64_t time_diff;
 	struct tm *t;
 	SYSTEM_INFO sysinfo;
+	char* winpmem_exe_name;
 
 	sprintf(dllpath, "%s\\NTFSParserDLL.dll", dirname(string(argv[0])).c_str());
 	if ((hNTFSParserdll = LoadLibrary(dllpath)) == NULL) {
@@ -1234,7 +1237,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.3.5 - 初動対応用データ収集ツール", "CDIR Collector v1.3.5 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.6 - 初動対応用データ収集ツール", "CDIR Collector v1.3.6 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir
@@ -1442,9 +1445,14 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (is_x64 == true)
+		winpmem_exe_name = "winpmem_x64.exe";
+	else
+		winpmem_exe_name = "winpmem_x86.exe";
+
 
 	if (param_memdump) {
-		if (!(config->isSet("MemoryDumpCmdline")) && filecheck((char*)((string)exedir + "\\winpmem.exe").c_str())) {
+		if (!(config->isSet("MemoryDumpCmdline")) && filecheck((char*)((string)exedir + "\\" + winpmem_exe_name).c_str())) {
 			cerr << msg("メモリダンプ用プログラムがありません",
 				"No memory dump program found") << endl;
 		}

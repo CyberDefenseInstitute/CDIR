@@ -40,8 +40,8 @@ Component of cdir-collector:
 * NTFSParserDLL.dll
 * libcrypto-41.dll
 * libssl-43.dll
-* winpmem.exe
-* winpmem-2.1.post4.exe
+* winpmem_x64.exe
+* winpmem_x86.exe
 
 ## How to use
 
@@ -57,5 +57,4 @@ cdir-collector depends on the following library/tools.
 * Library: NTFSParserDLL, LibreSSL
 * Tool: winpmem
 
-winpmem.exe is a part of c-aff4 project (https://github.com/Velocidex/c-aff4). 
-winpmem-2.1.post4.exe is a part of rekall project (https://github.com/google/rekall).
+winpmem_x64.exe and winpmem_x86.exe are parts of winpmem project (https://github.com/Velocidex/WinPmem). 
