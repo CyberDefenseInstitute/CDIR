@@ -32,7 +32,7 @@ https://github.com/CyberDefenseInstitute/CDIR/releases
 
 ## Build
 
-If you want to customise and build binary from source code, try to use Visual Studio 2019. 
+If you want to customise and build binary from source code, try to use Visual Studio 2022. 
 
 Component of cdir-collector: 
 * cdir.ini

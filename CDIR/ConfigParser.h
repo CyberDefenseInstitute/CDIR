@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <fstream>
+#include <functional>
 
 using namespace std;
 
@@ -23,7 +24,7 @@ struct Value {
 //#define GETVALUE(val) ((val).type==TYPE_BOOL)?(CASTPTR(bool,(val).ptr)):((val.type==TYPE_INT)?(CASTPTR(int,(val).ptr)):(CASTPTR(string,(val).ptr)))
 //#define GETVALUE(val) [=](){if(val.type==TYPE_BOOL)return CASTPTR(bool,(val).ptr);if(val.type==TYPE_INT)return CASTPTR(int,(val).ptr);if(val.type==TYPE_STRING)return CASTPTR(int,(val).ptr);}
 
-struct c_ignorecase:std::binary_function<string, string, bool> {
+struct c_ignorecase:std::function<bool(string, string)> {
 	bool operator() (const string &s1, const string &s2) const {
 		return _stricmp(s1.c_str(), s2.c_str()) < 0;
 	}

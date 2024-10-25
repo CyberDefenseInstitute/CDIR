@@ -144,13 +144,13 @@ extern "C" HANDLE __declspec(dllexport) StealthOpenFile(char* filePathCStr)
 }
 
 // add filesize argument
-extern "C" DWORD __declspec(dllexport) StealthReadFile(FileInfo_t* fileInfo, BYTE* buffer, DWORD bufferSize, ULONGLONG offset, DWORD* bytesRead, ULONGLONG* dataRemaining, ULONGLONG fileSize)
+extern "C" DWORD __declspec(dllexport) StealthReadFile(FileInfo_t* fileInfo, BYTE* buffer, DWORD bufferSize, ULONGLONG offset, DWORD* bytesRead, ULONGLONG* dataRemaining, ULONGLONG fileSize, ULONGLONG initializedSize)
 {
 	if (fileInfo->data)
 	{
-//		ULONGLONG dataLength = (ULONGLONG)fileInfo->data->GetDataSize();
 		ULONGLONG dataLength = fileSize; // changed for datarun around multiple record
 		ULONGLONG fullDataLength = dataLength;
+		ULONGLONG validDataLength = initializedSize;
 
 		dataLength = dataLength - offset;
 		if (dataLength > bufferSize)
@@ -165,6 +165,18 @@ extern "C" DWORD __declspec(dllexport) StealthReadFile(FileInfo_t* fileInfo, BYT
 		DWORD len;
 		if (fileInfo->data->ReadData(offset, buffer, (DWORD)dataLength, &len) && len == (DWORD)dataLength)
 		{
+			if (validDataLength < fileSize)
+			{
+				if (validDataLength <= offset)
+				{
+					std::memset(buffer, 0, sizeof(BYTE) * len);
+				}
+				else if (validDataLength < offset + len)
+				{
+					ULONGLONG offsetOfBuffer = validDataLength - offset;
+					std::memset(buffer + offsetOfBuffer, 0, sizeof(BYTE)*size_t(bufferSize - offsetOfBuffer));
+				}
+			}
 			*bytesRead = len;
 			*dataRemaining = fullDataLength - len - offset;
 			return 0; //Success

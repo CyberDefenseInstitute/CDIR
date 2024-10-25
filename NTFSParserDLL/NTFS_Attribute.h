@@ -77,6 +77,7 @@ protected:
 
 public:
 	virtual __inline ULONGLONG GetDataSize(ULONGLONG *allocSize = NULL) const = 0;
+	virtual __inline ULONGLONG GetIniDataSize() const { return this->GetDataSize(); };
 	virtual BOOL ReadData(const ULONGLONG &offset, void *bufv, DWORD bufLen, DWORD *actural) const = 0;
 };	// CAttrBase
 
@@ -285,6 +286,7 @@ protected:
 
 public:
 	virtual __inline ULONGLONG GetDataSize(ULONGLONG *allocSize = NULL) const;
+	virtual __inline ULONGLONG GetIniDataSize() const;
 	virtual BOOL ReadData(const ULONGLONG &offset, void *bufv, DWORD bufLen, DWORD *actural) const;
 	CDataRunList *GetDataRunList();
 };	// CAttrNonResident
@@ -516,6 +518,13 @@ __inline ULONGLONG CAttrNonResident::GetDataSize(ULONGLONG *allocSize) const
 
 	return AttrHeaderNR->RealSize;
 }
+
+// Return Initialized Size(ValidDataLength)
+__inline ULONGLONG CAttrNonResident::GetIniDataSize() const
+{
+	return AttrHeaderNR->IniSize;
+}
+
 
 // Read "bufLen" bytes from "offset" into "bufv"
 // Number of bytes acturally read is returned in "*actural"

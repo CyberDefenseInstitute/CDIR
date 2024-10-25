@@ -1,5 +1,5 @@
 ﻿/*
- * Copyright(C) 2022 Cyber Defense Institute, Inc.
+ * Copyright(C) 2024 Cyber Defense Institute, Inc.
  *
  * This program/include file is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as published
@@ -50,7 +50,7 @@
 using namespace std;
 
 typedef FileInfo_t* (__cdecl *StealthOpenFile_func)(char*);
-typedef int(__cdecl *StealthReadFile_func)(FileInfo_t*, BYTE*, DWORD, ULONGLONG, DWORD*, ULONGLONG*, ULONGLONG);
+typedef int(__cdecl *StealthReadFile_func)(FileInfo_t*, BYTE*, DWORD, ULONGLONG, DWORD*, ULONGLONG*, ULONGLONG, ULONGLONG);
 typedef void(__cdecl *StealthCloseFile_func)(FileInfo_t*);
 
 StealthOpenFile_func  StealthOpenFile;
@@ -334,6 +334,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	};
 
 	ULONGLONG filesize = (ULONGLONG)file->data->GetDataSize();
+	ULONGLONG initializedsize = (ULONGLONG)file->data->GetIniDataSize();
 	WriteWrapper wfile(outpath, filesize);
 
 	SHA256_CTX sha256;
@@ -384,7 +385,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 	do {
 		int ret;
 
-		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize)) != 0) {
+		if ((ret = StealthReadFile(file, buf, CHUNKSIZE, offset, &bytesread, &bytesleft, filesize, initializedsize)) != 0) {
 			if (SparseSkip && strlen(filepath) > 3 && strcmp(&(filepath[2]), journalpath) == 0) {
 				filesize -= offset;
 				skipclusters = 0;
@@ -433,7 +434,7 @@ int StealthGetFile(char *filepath, char *outpath, ostringstream *osslog = NULL, 
 			else if (ret == 3) {
 				int adjustsize = CHUNKSIZE;
 				adjustsize -= BLOCKSIZE;
-				while (StealthReadFile(file, buf, adjustsize, offset, &bytesread, &bytesleft, filesize) == 3)
+				while (StealthReadFile(file, buf, adjustsize, offset, &bytesread, &bytesleft, filesize, initializedsize) == 3)
 					adjustsize -= BLOCKSIZE;
 			}
 			else {
@@ -1237,7 +1238,7 @@ int main(int argc, char **argv)
 
 	// chack proces name
 	procname = basename(string(argv[0]));
-	cout << msg("CDIR Collector v1.3.6 - 初動対応用データ収集ツール", "CDIR Collector v1.3.6 - Data Acquisition Tool for First Response") << endl;
+	cout << msg("CDIR Collector v1.3.7 - 初動対応用データ収集ツール", "CDIR Collector v1.3.7 - Data Acquisition Tool for First Response") << endl;
 	cout << msg("Cyber Defense Institute, Inc.\n", "Cyber Defense Institute, Inc.\n") << endl;
 
 	// set curdir -> exedir
